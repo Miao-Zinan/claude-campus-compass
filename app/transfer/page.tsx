@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type TransferForm = {
@@ -89,7 +90,7 @@ function DateChoice({
   const isUnknown = value === "unknown";
   return (
     <div>
-      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-[#25382d]">
+      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-[var(--heading)]">
         {label}
       </label>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -99,14 +100,14 @@ function DateChoice({
           value={isUnknown ? "" : value}
           onChange={(event) => onChange(event.target.value)}
           disabled={isUnknown}
-          className="min-h-12 flex-1 rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm text-[#25382d] outline-none transition focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9] disabled:bg-[#edf1eb]"
+          className="min-h-12 flex-1 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm text-[var(--heading)] outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)] disabled:bg-[var(--surface-muted)]"
         />
-        <label className="flex min-h-12 items-center gap-2 rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm text-[#53625a]">
+        <label className="flex min-h-12 items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm text-[var(--text)]">
           <input
             type="checkbox"
             checked={isUnknown}
             onChange={(event) => onChange(event.target.checked ? "unknown" : "")}
-            className="h-4 w-4 accent-[#1d4d3a]"
+            className="h-4 w-4 accent-[var(--primary)]"
           />
           Not sure
         </label>
@@ -117,7 +118,7 @@ function DateChoice({
 
 function DemoNotice() {
   return (
-    <div className="rounded-xl border border-[#ead9c7] bg-[#fff8ef] px-4 py-3 text-sm leading-6 text-[#76583f]">
+    <div className="rounded-xl border border-[var(--accent)] bg-[var(--surface-muted)] px-4 py-3 text-sm leading-6 text-[var(--heading)]">
       <strong className="font-semibold">Demo mode.</strong> AI responses and verified policy
       sources are not connected yet.
     </div>
@@ -205,19 +206,19 @@ export default function TransferPage() {
       await navigator.clipboard.writeText(text);
       setCopyFeedback(`${label} copied`);
     } catch {
-      setCopyFeedback("Copy failed — please select and copy manually");
+      setCopyFeedback("Copy failed �?please select and copy manually");
     }
     window.setTimeout(() => setCopyFeedback(""), 2200);
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f7f3] text-[#17231e]">
+    <div className="min-h-screen bg-[linear-gradient(135deg,var(--background)_0%,var(--surface)_55%,var(--surface-muted)_100%)] text-[var(--text)]">
       <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-6 sm:px-8">
-        <Link href="/" className="flex items-center gap-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1d4d3a]">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1d4d3a] text-sm font-bold text-white">CC</span>
-          <span className="font-semibold tracking-tight">Claude Campus Compass</span>
+        <Link href="/" aria-label="Claude Campus Compass home" className="flex items-center gap-3">
+          <Image src="/campus-compass-icon.png" alt="" width={48} height={48} className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12" />
+          <span className="text-xl font-semibold tracking-tight">Claude Campus Compass</span>
         </Link>
-        <span className="rounded-full border border-[#cbd7cc] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[#55705d] sm:px-4 sm:text-xs">
+        <span className="rounded-full border border-[var(--accent)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--heading)] sm:px-4 sm:text-xs">
           Interactive Demo
         </span>
       </header>
@@ -226,29 +227,29 @@ export default function TransferPage() {
         {step < 3 ? (
           <div className="mx-auto max-w-3xl pt-8 sm:pt-12">
             <div className="mb-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#be6b43]">F-1 SEVIS transfer</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--heading)]">F-1 SEVIS transfer</p>
               <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
                 Let&apos;s make a clear starting point.
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#607067]">
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text)]">
                 A few questions will help organize a conversation with your international
                 student adviser. This is information navigation only, not an immigration
                 eligibility assessment.
               </p>
             </div>
-            <div className="mb-6 flex items-center gap-3 text-xs font-semibold text-[#55705d]">
+            <div className="mb-6 flex items-center gap-3 text-xs font-semibold text-[var(--heading)]">
               {[1, 2].map((number) => (
                 <div key={number} className="flex items-center gap-3">
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-full ${step >= number ? "bg-[#1d4d3a] text-white" : "bg-[#dce6dc] text-[#55705d]"}`}>
+                  <span className={`flex h-8 w-8 items-center justify-center rounded-full ${step >= number ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-muted)] text-[var(--heading)]"}`}>
                     {number}
                   </span>
-                  {number === 1 ? <span className="h-px w-10 bg-[#cbd8cc] sm:w-20" /> : null}
+                  {number === 1 ? <span className="h-px w-10 bg-[var(--accent)] sm:w-20" /> : null}
                 </div>
               ))}
               <span>{step === 1 ? "Your situation" : "Dates and questions"}</span>
             </div>
             <form
-              className="rounded-[2rem] border border-[#d7e0d6] bg-white/75 p-6 shadow-[0_20px_60px_rgba(39,67,48,0.08)] sm:p-9"
+              className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-6 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-9"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (step === 1) {
@@ -262,20 +263,20 @@ export default function TransferPage() {
               }}
             >
               {isExample ? (
-                <div className="mb-6 rounded-xl border border-[#cbd8cc] bg-[#f1f5ef] px-4 py-3 text-sm text-[#53625a]">
-                  <strong className="font-semibold text-[#1d4d3a]">Fictional example loaded.</strong> You can edit every field before continuing.
+                <div className="mb-6 rounded-xl border border-[var(--accent)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--text)]">
+                  <strong className="font-semibold text-[var(--primary)]">Fictional example loaded.</strong> You can edit every field before continuing.
                 </div>
               ) : null}
               {step === 1 ? (
                 <div className="space-y-6">
                   <div>
-                    <label htmlFor="currentSchool" className="mb-2 block text-sm font-semibold text-[#25382d]">Current school</label>
-                    <input id="currentSchool" value={form.currentSchool} onChange={(event) => updateForm("currentSchool", event.target.value)} placeholder="e.g. Lakeview Community College" className="min-h-12 w-full rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]" aria-invalid={currentSchoolInvalid} required />
-                    {form.currentSchool.length > 0 && currentSchoolInvalid ? <p className="mt-2 text-xs text-[#a34f38]">Enter your current school name. It cannot be blank.</p> : null}
+                    <label htmlFor="currentSchool" className="mb-2 block text-sm font-semibold text-[var(--heading)]">Current school</label>
+                    <input id="currentSchool" value={form.currentSchool} onChange={(event) => updateForm("currentSchool", event.target.value)} placeholder="e.g. Lakeview Community College" className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" aria-invalid={currentSchoolInvalid} required />
+                    {form.currentSchool.length > 0 && currentSchoolInvalid ? <p className="mt-2 text-xs text-[var(--heading)]">Enter your current school name. It cannot be blank.</p> : null}
                   </div>
                   <div>
-                    <label htmlFor="targetSchool" className="mb-2 block text-sm font-semibold text-[#25382d]">Target school</label>
-                    <select id="targetSchool" value={form.targetSchool} onChange={(event) => updateForm("targetSchool", event.target.value)} className="min-h-12 w-full rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]">
+                    <label htmlFor="targetSchool" className="mb-2 block text-sm font-semibold text-[var(--heading)]">Target school</label>
+                    <select id="targetSchool" value={form.targetSchool} onChange={(event) => updateForm("targetSchool", event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]">
                       <option value="">Select a school or choose not sure</option>
                       <option value="not sure yet">Not sure yet</option>
                       <option value="Northbridge University">Northbridge University</option>
@@ -283,23 +284,23 @@ export default function TransferPage() {
                     </select>
                     {customTargetSchoolSelected ? (
                       <div className="mt-4">
-                        <label htmlFor="targetSchoolCustom" className="mb-2 block text-sm font-semibold text-[#25382d]">School name</label>
+                        <label htmlFor="targetSchoolCustom" className="mb-2 block text-sm font-semibold text-[var(--heading)]">School name</label>
                         <input
                           id="targetSchoolCustom"
                           value={form.targetSchoolCustom}
                           onChange={(event) => updateForm("targetSchoolCustom", event.target.value)}
                           placeholder="e.g. Westbridge University"
-                          className="min-h-12 w-full rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]"
+                          className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]"
                           aria-invalid={customTargetSchoolInvalid}
                           required
                         />
-                        {customTargetSchoolInvalid ? <p className="mt-2 text-xs text-[#a34f38]">Enter a school name. It cannot be blank.</p> : null}
+                        {customTargetSchoolInvalid ? <p className="mt-2 text-xs text-[var(--heading)]">Enter a school name. It cannot be blank.</p> : null}
                       </div>
                     ) : null}
                   </div>
                   <div>
-                    <label htmlFor="situation" className="mb-2 block text-sm font-semibold text-[#25382d]">Current situation</label>
-                    <select id="situation" value={form.situation} onChange={(event) => updateForm("situation", event.target.value)} required className="min-h-12 w-full rounded-xl border border-[#cbd8cc] bg-white px-4 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]">
+                    <label htmlFor="situation" className="mb-2 block text-sm font-semibold text-[var(--heading)]">Current situation</label>
+                    <select id="situation" value={form.situation} onChange={(event) => updateForm("situation", event.target.value)} required className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]">
                       <option value="">Choose one</option>
                       <option value="Currently enrolled">Currently enrolled</option>
                       <option value="Currently on OPT">Currently on OPT</option>
@@ -307,7 +308,7 @@ export default function TransferPage() {
                       <option value="Other">Other</option>
                       <option value="Not sure">Not sure</option>
                     </select>
-                    <p className="mt-2 text-xs leading-5 text-[#718078]">Your DSO is the Designated School Official responsible for international student services at your school.</p>
+                    <p className="mt-2 text-xs leading-5 text-[var(--text)]">Your DSO is the Designated School Official responsible for international student services at your school.</p>
                   </div>
                 </div>
               ) : (
@@ -315,15 +316,15 @@ export default function TransferPage() {
                   <DateChoice id="programEnd" label="Current program end date" value={form.programEnd} onChange={(value) => updateForm("programEnd", value)} />
                   <DateChoice id="programStart" label="Target program start date" value={form.programStart} onChange={(value) => updateForm("programStart", value)} />
                   <div>
-                    <label htmlFor="questions" className="mb-2 block text-sm font-semibold text-[#25382d]">What would you like to ask? <span className="font-normal text-[#718078]">(optional)</span></label>
-                    <textarea id="questions" value={form.questions} onChange={(event) => updateForm("questions", event.target.value)} rows={4} placeholder="Add questions you want to discuss with your DSO..." className="w-full resize-y rounded-xl border border-[#cbd8cc] bg-white px-4 py-3 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]" />
+                    <label htmlFor="questions" className="mb-2 block text-sm font-semibold text-[var(--heading)]">What would you like to ask? <span className="font-normal text-[var(--text)]">(optional)</span></label>
+                    <textarea id="questions" value={form.questions} onChange={(event) => updateForm("questions", event.target.value)} rows={4} placeholder="Add questions you want to discuss with your DSO..." className="w-full resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
                   </div>
-                  <p className="text-xs leading-5 text-[#718078]">Dates can be marked “Not sure.” No name, passport number, SEVIS ID, or files are collected.</p>
+                  <p className="text-xs leading-5 text-[var(--text)]">Dates can be marked “Not sure.�?No name, passport number, SEVIS ID, or files are collected.</p>
                 </div>
               )}
-              <div className="mt-8 flex flex-wrap justify-between gap-3 border-t border-[#e5ebe3] pt-6">
-                {step === 2 ? <button type="button" onClick={() => setStep(1)} className="rounded-full border border-[#b8c8ba] px-5 py-3 text-sm font-semibold text-[#1d4d3a] hover:bg-[#eaf0e8] focus-visible:outline-2 focus-visible:outline-[#1d4d3a]">Back</button> : <span />}
-                <button type="submit" disabled={step === 1 ? !canContinueStepOne : !canContinueStepTwo} className="rounded-full bg-[#1d4d3a] px-6 py-3 text-sm font-semibold text-white hover:bg-[#28634b] disabled:cursor-not-allowed disabled:bg-[#aabbb0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d4d3a]">
+              <div className="mt-8 flex flex-wrap justify-between gap-3 border-t border-[var(--accent)] pt-6">
+                {step === 2 ? <button type="button" onClick={() => setStep(1)} className="rounded-full border border-[var(--primary)] px-5 py-3 text-sm font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)] focus-visible:outline-2 focus-visible:outline-[var(--primary)]">Back</button> : <span />}
+                <button type="submit" disabled={step === 1 ? !canContinueStepOne : !canContinueStepTwo} className="rounded-full bg-[var(--primary)] px-6 py-3 text-sm font-semibold text-white hover:bg-[var(--heading)] disabled:cursor-not-allowed disabled:bg-[var(--surface-muted)] disabled:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">
                   {step === 1 ? "Next" : summary ? "Save details" : "See my summary"}
                 </button>
               </div>
@@ -378,64 +379,64 @@ function ConsultationView({
     <div className="pt-6 sm:pt-10">
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#be6b43]">Your transfer planning workspace</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--heading)]">Your transfer planning workspace</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">A clearer conversation starts here.</h1>
         </div>
-        <Link href="/" className="rounded-full border border-[#b8c8ba] px-4 py-2 text-sm font-semibold text-[#1d4d3a] hover:bg-[#eaf0e8]">Exit demo</Link>
+        <Link href="/" className="rounded-full border border-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)]">Exit demo</Link>
       </div>
       <div className="mb-7"><DemoNotice /></div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]">
-        <section className="order-1 flex min-h-[390px] max-h-[calc(100vh-270px)] flex-col rounded-[2rem] border border-[#d7e0d6] bg-white/75 p-5 shadow-[0_20px_60px_rgba(39,67,48,0.08)] sm:p-7">
-          <div className="mb-5 flex items-center justify-between border-b border-[#e5ebe3] pb-4">
+        <section className="order-1 flex min-h-[390px] max-h-[calc(100vh-270px)] flex-col rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-5 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-7">
+          <div className="mb-5 flex items-center justify-between border-b border-[var(--accent)] pb-4">
             <div>
               <h2 className="font-semibold">Ask about your situation</h2>
-              <p className="mt-1 text-xs text-[#718078]">Simulated guidance for organizing your questions.</p>
+              <p className="mt-1 text-xs text-[var(--text)]">Simulated guidance for organizing your questions.</p>
             </div>
-            <span className="rounded-full bg-[#f1f5ef] px-3 py-1 text-xs font-semibold text-[#55705d]">Demo</span>
+            <span className="rounded-full bg-[var(--surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--heading)]">Demo</span>
           </div>
           {detailsChanged ? (
-            <p className="mb-4 rounded-xl border border-[#ead9c7] bg-[#fff8ef] px-3 py-2 text-xs leading-5 text-[#76583f]">
+            <p className="mb-4 rounded-xl border border-[var(--accent)] bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--heading)]">
               Your details have changed. Earlier messages may refer to your previous details.
             </p>
           ) : null}
           <div className="flex-1 space-y-4 overflow-y-auto pb-5">
             {chatMessages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <p className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "rounded-br-sm bg-[#1d4d3a] text-white" : "rounded-bl-sm bg-[#f1f5ef] text-[#3d5145]"}`}>{message.text}</p>
+                <p className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "rounded-br-sm bg-[var(--primary)] text-white" : "rounded-bl-sm bg-[var(--surface-muted)] text-[var(--text)]"}`}>{message.text}</p>
               </div>
             ))}
-            {isResponding ? <p className="text-xs text-[#718078]">Preparing a demo response...</p> : null}
+            {isResponding ? <p className="text-xs text-[var(--text)]">Preparing a demo response...</p> : null}
           </div>
-          <form onSubmit={submitChat} className="flex gap-2 border-t border-[#e5ebe3] pt-5">
+          <form onSubmit={submitChat} className="flex gap-2 border-t border-[var(--accent)] pt-5">
             <label htmlFor="chatInput" className="sr-only">Ask a question</label>
-            <input id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Type a question for the demo..." className="min-w-0 flex-1 rounded-xl border border-[#cbd8cc] bg-white px-4 py-3 text-sm outline-none focus:border-[#1d4d3a] focus:ring-2 focus:ring-[#d8e8d9]" />
-            <button type="submit" disabled={!chatInput.trim() || isResponding} className="rounded-xl bg-[#1d4d3a] px-4 py-3 text-sm font-semibold text-white hover:bg-[#28634b] disabled:cursor-not-allowed disabled:bg-[#aabbb0]">Send</button>
+            <input id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Type a question for the demo..." className="min-w-0 flex-1 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+            <button type="submit" disabled={!chatInput.trim() || isResponding} className="rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--heading)] disabled:cursor-not-allowed disabled:bg-[var(--accent)]">Send</button>
           </form>
         </section>
 
         <aside className="order-2 space-y-6">
-          <section className="rounded-[2rem] border border-[#d7e0d6] bg-white/75 p-6 shadow-[0_20px_60px_rgba(39,67,48,0.08)]">
+          <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-6 shadow-[0_20px_60px_rgba(6,75,96,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Your situation summary</h2>
-              <button type="button" onClick={() => copyText(summary, "Summary")} className="text-xs font-semibold text-[#1d4d3a] underline underline-offset-4">{copyFeedback || "Copy"}</button>
+              <button type="button" onClick={() => copyText(summary, "Summary")} className="text-xs font-semibold text-[var(--primary)] underline underline-offset-4">{copyFeedback || "Copy"}</button>
             </div>
-            <p className="mt-4 rounded-xl border border-[#cbd8cc] bg-[#fbfcf9] p-3 text-sm leading-6 text-[#53625a]">{summary}</p>
-            <button type="button" onClick={onEditDetails} className="mt-3 text-xs font-semibold text-[#1d4d3a] underline underline-offset-4">Edit details</button>
-            <button type="button" onClick={() => copyText(`${summary}\n\nQuestions: ${form.questions || "None added"}`, "Summary and questions")} className="mt-3 w-full rounded-xl border border-[#b8c8ba] px-4 py-2.5 text-xs font-semibold text-[#1d4d3a] hover:bg-[#eaf0e8]">Copy summary + questions</button>
+            <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] p-3 text-sm leading-6 text-[var(--text)]">{summary}</p>
+            <button type="button" onClick={onEditDetails} className="mt-3 text-xs font-semibold text-[var(--primary)] underline underline-offset-4">Edit details</button>
+            <button type="button" onClick={() => copyText(`${summary}\n\nQuestions: ${form.questions || "None added"}`, "Summary and questions")} className="mt-3 w-full rounded-xl border border-[var(--primary)] px-4 py-2.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)]">Copy summary + questions</button>
           </section>
-          <section className="rounded-[2rem] border border-[#d7e0d6] bg-[#edf4eb] p-6">
+          <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface-muted)] p-6">
             <h2 className="font-semibold">Preparation checklist</h2>
-            <ul className="mt-4 space-y-3 text-sm leading-5 text-[#53625a]">
-              {checklistFor(form).map((item) => <li key={item} className="flex gap-3"><span className="mt-1 h-4 w-4 shrink-0 rounded border border-[#9fb6a2] bg-white" />{item}</li>)}
+            <ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--text)]">
+              {checklistFor(form).map((item) => <li key={item} className="flex gap-3"><span className="mt-1 h-4 w-4 shrink-0 rounded border border-[var(--primary)] bg-[var(--surface)]" />{item}</li>)}
             </ul>
           </section>
-          <section className="rounded-[2rem] border border-[#d7e0d6] bg-white/60 p-6">
+          <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/60 p-6">
             <h2 className="font-semibold">Sources</h2>
-            <p className="mt-3 text-sm leading-6 text-[#718078]">Verified policy sources have not been connected yet.</p>
+            <p className="mt-3 text-sm leading-6 text-[var(--text)]">Verified policy sources have not been connected yet.</p>
           </section>
         </aside>
       </div>
-      <p className="mt-7 text-center text-xs leading-5 text-[#718078]">Independent student project providing information navigation. Confirm personal details with your school adviser.</p>
+      <p className="mt-7 text-center text-xs leading-5 text-[var(--text)]">Independent student project providing information navigation. Confirm personal details with your school adviser.</p>
     </div>
   );
 }
