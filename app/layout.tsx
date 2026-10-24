@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Claude Campus Compass",
   description: "A thoughtful guide for navigating campus life.",
+  icons: {
+    icon: "/campus-compass-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

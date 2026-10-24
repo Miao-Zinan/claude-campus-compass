@@ -3,78 +3,19 @@
 import Link from "next/link";
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  checklistFor,
+  emptyForm,
+  exampleForm,
+  formatDate,
+  formatSituation,
+  getTargetSchool,
+} from "@/lib/transfer/logic";
+import type { ChatMessage, TransferForm } from "@/lib/transfer/types";
 
-type TransferForm = {
-  currentSchool: string;
-  targetSchool: string;
-  targetSchoolCustom: string;
-  situation: string;
-  programEnd: string;
-  programStart: string;
-  questions: string;
+type DisplayChatMessage = ChatMessage & {
+  kind?: "demo" | "status";
 };
-
-type ChatMessage = {
-  role: "assistant" | "user";
-  text: string;
-};
-
-const emptyForm: TransferForm = {
-  currentSchool: "",
-  targetSchool: "",
-  targetSchoolCustom: "",
-  situation: "",
-  programEnd: "",
-  programStart: "",
-  questions: "",
-};
-
-const exampleForm: TransferForm = {
-  currentSchool: "Lakeview Community College",
-  targetSchool: "Northbridge University",
-  targetSchoolCustom: "",
-  situation: "Currently enrolled",
-  programEnd: "2027-05-15",
-  programStart: "2027-08-23",
-  questions: "What should I ask my current and future international student advisers?",
-};
-
-const situationLabels: Record<string, string> = {
-  "Currently enrolled": "currently enrolled",
-  "Currently on OPT": "currently on OPT",
-  "Completed my program": "done with my program",
-  Other: "in another situation",
-  "Not sure": "not sure about my current status",
-};
-
-function formatSituation(situation: string, school: string) {
-  const phrase = situationLabels[situation] || "not sure about my current status";
-  return `I am ${phrase} at ${school}.`;
-}
-
-function getTargetSchool(form: TransferForm) {
-  if (form.targetSchool === "another school") return form.targetSchoolCustom.trim();
-  if (form.targetSchool === "not sure yet" || !form.targetSchool) return "";
-  return form.targetSchool;
-}
-
-function formatDate(value: string) {
-  if (value === "unknown") return "a date I have not confirmed yet";
-  if (!value) return "a date I have not provided";
-  return value;
-}
-
-function checklistFor(form: TransferForm) {
-  const items: string[] = [];
-  if (form.programEnd === "unknown") items.push("Fill in your current program end date when you have confirmed it.");
-  if (form.programStart === "unknown") items.push("Fill in your target program start date when you have confirmed it.");
-  if (!form.targetSchool || form.targetSchool === "not sure yet") {
-    items.push("Confirm which target school you want to discuss with your adviser.");
-  }
-  items.push("Keep your current and target school information together.");
-  items.push("Write down questions to confirm with your DSO.");
-  return items;
-}
 
 function DateChoice({
   id,
@@ -130,7 +71,7 @@ export default function TransferPage() {
   const [step, setStep] = useState(1);
   const [summary, setSummary] = useState("");
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<DisplayChatMessage[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState("");
   const [isExample, setIsExample] = useState(false);
@@ -182,23 +123,44 @@ export default function TransferPage() {
     setStep(3);
   };
 
-  const submitChat = (event: FormEvent<HTMLFormElement>) => {
+  const submitChat = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = chatInput.trim();
     if (!message || isResponding) return;
-    setChatMessages((messages) => [...messages, { role: "user", text: message }]);
+    const nextMessages: DisplayChatMessage[] = [...chatMessages, { role: "user", text: message }];
+    setChatMessages(nextMessages);
     setChatInput("");
     setIsResponding(true);
-    window.setTimeout(() => {
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentData: form,
+          messages: nextMessages.map(({ role, text }) => ({ role, text })),
+        }),
+      });
+      const result: { status?: string; message?: string } = await response.json();
       setChatMessages((messages) => [
         ...messages,
         {
           role: "assistant",
-          text: `I am using your current details for this demo: ${form.currentSchool.trim()}, ${situationLabels[form.situation] || "status not confirmed"}${targetSchoolName ? `, considering ${targetSchoolName}` : ""}. I can help you clarify what to discuss and identify missing details, but this demo does not provide policy requirements, deadlines, eligibility conclusions, or verified sources. Your DSO can confirm the next steps for your situation.`,
+          kind: "status",
+          text: response.ok && result.message ? result.message : "Live guidance is not connected yet",
         },
       ]);
+    } catch {
+      setChatMessages((messages) => [
+        ...messages,
+        {
+          role: "assistant",
+          kind: "status",
+          text: "Live guidance is not connected yet",
+        },
+      ]);
+    } finally {
       setIsResponding(false);
-    }, 500);
+    }
   };
 
   const copyText = async (text: string, label: string) => {
@@ -206,7 +168,7 @@ export default function TransferPage() {
       await navigator.clipboard.writeText(text);
       setCopyFeedback(`${label} copied`);
     } catch {
-      setCopyFeedback("Copy failed �?please select and copy manually");
+      setCopyFeedback("Copy failed - please select and copy manually");
     }
     window.setTimeout(() => setCopyFeedback(""), 2200);
   };
@@ -319,7 +281,7 @@ export default function TransferPage() {
                     <label htmlFor="questions" className="mb-2 block text-sm font-semibold text-[var(--heading)]">What would you like to ask? <span className="font-normal text-[var(--text)]">(optional)</span></label>
                     <textarea id="questions" value={form.questions} onChange={(event) => updateForm("questions", event.target.value)} rows={4} placeholder="Add questions you want to discuss with your DSO..." className="w-full resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
                   </div>
-                  <p className="text-xs leading-5 text-[var(--text)]">Dates can be marked “Not sure.�?No name, passport number, SEVIS ID, or files are collected.</p>
+                  <p className="text-xs leading-5 text-[var(--text)]">Dates can be marked as &quot;Not sure&quot;. No name, passport number, SEVIS ID, or files are collected.</p>
                 </div>
               )}
               <div className="mt-8 flex flex-wrap justify-between gap-3 border-t border-[var(--accent)] pt-6">
@@ -368,9 +330,9 @@ function ConsultationView({
   onEditDetails: () => void;
   chatInput: string;
   setChatInput: (value: string) => void;
-  chatMessages: ChatMessage[];
+  chatMessages: DisplayChatMessage[];
   isResponding: boolean;
-  submitChat: (event: FormEvent<HTMLFormElement>) => void;
+  submitChat: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   copyFeedback: string;
   copyText: (text: string, label: string) => void;
   detailsChanged: boolean;
@@ -402,7 +364,10 @@ function ConsultationView({
           <div className="flex-1 space-y-4 overflow-y-auto pb-5">
             {chatMessages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <p className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "rounded-br-sm bg-[var(--primary)] text-white" : "rounded-bl-sm bg-[var(--surface-muted)] text-[var(--text)]"}`}>{message.text}</p>
+                <p className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "rounded-br-sm bg-[var(--primary)] text-white" : "rounded-bl-sm bg-[var(--surface-muted)] text-[var(--text)]"}`}>
+                  {message.kind === "status" ? <strong className="mr-1 font-semibold">Service status:</strong> : null}
+                  {message.text}
+                </p>
               </div>
             ))}
             {isResponding ? <p className="text-xs text-[var(--text)]">Preparing a demo response...</p> : null}
