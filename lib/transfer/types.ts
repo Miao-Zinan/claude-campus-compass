@@ -29,3 +29,31 @@ export type ChatResponseBlock = {
 };
 
 export type StudentTransferData = TransferForm;
+
+export type PlanBasisType = "source_based" | "preparation" | "confirm_with_dso";
+
+export type PreparationPlanItem = {
+  id: string;
+  title: string;
+  description: string;
+  basisType: PlanBasisType;
+  referenceIds: string[];
+};
+
+export type PreparationPlan = {
+  situationSummary: string;
+  missingInformation: string[];
+  preparationItems: PreparationPlanItem[];
+  currentDsoQuestions: string[];
+  targetDsoQuestions: string[];
+  coverageLimits: string[];
+};
+
+export type PlanReference = {
+  id: string;
+  title: string;
+  publisher: string;
+  url: string;
+  lastVerifiedAt: string | null;
+  schoolScope: string;
+};

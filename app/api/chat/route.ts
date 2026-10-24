@@ -1,26 +1,12 @@
 import { requestClaudeGuidance } from "@/lib/chat/claude-service";
-import type { ChatMessage, StudentTransferData } from "@/lib/transfer/types";
+import type { ChatMessage } from "@/lib/transfer/types";
+import { validateStudentData } from "@/lib/transfer/validation";
 
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_LENGTH = 4000;
-const MAX_FIELD_LENGTH = 500;
-const transferFields: (keyof StudentTransferData)[] = [
-  "currentSchool",
-  "targetSchool",
-  "targetSchoolCustom",
-  "situation",
-  "programEnd",
-  "programStart",
-  "questions",
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validateStudentData(value: unknown): value is StudentTransferData {
-  if (!isRecord(value)) return false;
-  return transferFields.every((field) => typeof value[field] === "string" && value[field].length <= MAX_FIELD_LENGTH);
 }
 
 function validateMessages(value: unknown): value is ChatMessage[] {

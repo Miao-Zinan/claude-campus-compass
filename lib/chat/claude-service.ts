@@ -9,13 +9,21 @@ export type ClaudeServiceResult =
   | { status: "error"; message: string; retryable: boolean };
 
 const MAX_OUTPUT_TOKENS = 4096;
-const REQUEST_TIMEOUT_MS = 20_000;
+export const REQUEST_TIMEOUT_MS = 20_000;
 
 function isRealAssistantMessage(message: ChatMessage) {
   return message.role === "assistant";
 }
 
-function getErrorResult(error: unknown): Extract<ClaudeServiceResult, { status: "error" }> {
+export function createClaudeClient(options: { timeout?: number; maxRetries?: number } = {}) {
+  return new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    maxRetries: options.maxRetries ?? 1,
+    timeout: options.timeout ?? REQUEST_TIMEOUT_MS,
+  });
+}
+
+export function getClaudeErrorResult(error: unknown): Extract<ClaudeServiceResult, { status: "error" }> {
   if (error instanceof Anthropic.AuthenticationError) {
     return { status: "error", message: "Claude authentication failed. Check the server configuration.", retryable: false };
   }
@@ -45,11 +53,7 @@ export async function requestClaudeGuidance(
     return { status: "not_configured", message: "Live guidance is not connected yet" };
   }
 
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    maxRetries: 1,
-    timeout: REQUEST_TIMEOUT_MS,
-  });
+  const client = createClaudeClient();
   const documents: Anthropic.Messages.DocumentBlockParam[] = references.map((reference) => ({
     type: "document",
     title: reference.title,
@@ -113,6 +117,6 @@ export async function requestClaudeGuidance(
       truncated: response.stop_reason === "max_tokens",
     };
   } catch (error) {
-    return getErrorResult(error);
+    return getClaudeErrorResult(error);
   }
 }

@@ -12,7 +12,14 @@ import {
   formatSituation,
   getTargetSchool,
 } from "@/lib/transfer/logic";
-import type { ChatCitation, ChatMessage, ChatResponseBlock, TransferForm } from "@/lib/transfer/types";
+import type {
+  ChatCitation,
+  ChatMessage,
+  ChatResponseBlock,
+  PlanReference,
+  PreparationPlan,
+  TransferForm,
+} from "@/lib/transfer/types";
 import type { PublicSevisTransferReference } from "@/lib/references/types";
 
 type DisplayChatMessage = ChatMessage & {
@@ -26,6 +33,11 @@ type DisplayChatMessage = ChatMessage & {
 type ReferencesResponse = {
   references: PublicSevisTransferReference[];
   notices: string[];
+};
+
+type GeneratedPlan = PreparationPlan & {
+  generatedAt: string;
+  references: PlanReference[];
 };
 
 function safeHref(value: string) {
@@ -170,11 +182,19 @@ export default function TransferPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<DisplayChatMessage[]>([]);
   const [isResponding, setIsResponding] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState("");
+  const [copyStatuses, setCopyStatuses] = useState<Record<string, "success" | "error">>({});
+  const copyTimers = useRef<Record<string, number>>({});
   const [isExample, setIsExample] = useState(false);
   const [detailsChanged, setDetailsChanged] = useState(false);
   const [references, setReferences] = useState<PublicSevisTransferReference[]>([]);
   const [referenceNotices, setReferenceNotices] = useState<string[]>([]);
+  const [generatedPlan, setGeneratedPlan] = useState<GeneratedPlan | null>(null);
+  const [planGenerating, setPlanGenerating] = useState(false);
+  const [planError, setPlanError] = useState("");
+  const [planOutOfDate, setPlanOutOfDate] = useState(false);
+  const [checkedPlanItems, setCheckedPlanItems] = useState<Record<string, boolean>>({});
+  const planRequestId = useRef(0);
+  const editHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (window.location.search.includes("example=1")) {
@@ -184,6 +204,14 @@ export default function TransferPage() {
       }, 0);
       return () => window.clearTimeout(timer);
     }
+  }, []);
+
+  useEffect(() => {
+    if (step === 2) editHeadingRef.current?.focus();
+  }, [step]);
+
+  useEffect(() => () => {
+    Object.values(copyTimers.current).forEach((timer) => window.clearTimeout(timer));
   }, []);
 
   useEffect(() => {
@@ -234,6 +262,10 @@ export default function TransferPage() {
   const enterConsultation = () => {
     setSummary(generatedSummary);
     setDetailsChanged(false);
+    setGeneratedPlan(null);
+    setPlanError("");
+    setPlanOutOfDate(false);
+    setCheckedPlanItems({});
     setChatMessages([
       {
         role: "assistant",
@@ -247,9 +279,50 @@ export default function TransferPage() {
   const editDetails = () => setStep(2);
 
   const saveDetails = () => {
+    planRequestId.current += 1;
+    setPlanGenerating(false);
     setSummary(generatedSummary);
     setDetailsChanged(true);
+    setPlanOutOfDate(Boolean(generatedPlan));
     setStep(3);
+  };
+
+  const generatePlan = async () => {
+    if (planGenerating) return;
+    if (generatedPlan && !window.confirm("Regenerating will replace the current plan and its checked items. Continue?")) {
+      return;
+    }
+    const requestId = ++planRequestId.current;
+    setPlanGenerating(true);
+    setPlanError("");
+    try {
+      const response = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentData: form }),
+      });
+      const result: {
+        status?: string;
+        message?: string;
+        plan?: PreparationPlan;
+        references?: PlanReference[];
+        generatedAt?: string;
+      } = await response.json();
+      if (requestId !== planRequestId.current) return;
+      if (result.status !== "ready" || !result.plan || !result.references || !result.generatedAt) {
+        setPlanError(result.message || "The preparation plan could not be generated. Please try again.");
+        return;
+      }
+      setGeneratedPlan({ ...result.plan, references: result.references, generatedAt: result.generatedAt });
+      setCheckedPlanItems({});
+      setPlanOutOfDate(false);
+    } catch {
+      if (requestId === planRequestId.current) {
+        setPlanError("The preparation plan could not be reached. Please try again.");
+      }
+    } finally {
+      if (requestId === planRequestId.current) setPlanGenerating(false);
+    }
   };
 
   const submitChat = async (event: FormEvent<HTMLFormElement>) => {
@@ -305,14 +378,42 @@ export default function TransferPage() {
     }
   };
 
-  const copyText = async (text: string, label: string) => {
+  const copyText = async (text: string, key: string) => {
+    if (copyTimers.current[key]) window.clearTimeout(copyTimers.current[key]);
     try {
       await navigator.clipboard.writeText(text);
-      setCopyFeedback(`${label} copied`);
+      setCopyStatuses((current) => ({ ...current, [key]: "success" }));
     } catch {
-      setCopyFeedback("Copy failed - please select and copy manually");
+      setCopyStatuses((current) => ({ ...current, [key]: "error" }));
     }
-    window.setTimeout(() => setCopyFeedback(""), 2200);
+    copyTimers.current[key] = window.setTimeout(() => {
+      setCopyStatuses((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }, 2000);
+  };
+
+  const copyPlan = () => {
+    if (!generatedPlan || planOutOfDate) return;
+    const items = generatedPlan.preparationItems.map((item) => `- ${item.title}: ${item.description}`).join("\n");
+    const sources = generatedPlan.references.map((reference) => `${reference.publisher}: ${reference.title} - ${reference.url} (Verified ${reference.lastVerifiedAt || "Not verified"}; ${reference.schoolScope})`).join("\n");
+    copyText([
+      "Claude-generated preparation plan",
+      `Generated: ${generatedPlan.generatedAt}`,
+      `Situation: ${generatedPlan.situationSummary}`,
+      "Preparation items:",
+      items || "None",
+      "Current DSO questions:",
+      generatedPlan.currentDsoQuestions.join("\n- "),
+      "Target-school DSO questions:",
+      generatedPlan.targetDsoQuestions.join("\n- "),
+      "Coverage limits:",
+      generatedPlan.coverageLimits.join("\n- ") || "None stated",
+      "Applicable references:",
+      sources || "None",
+    ].join("\n"), "plan");
   };
 
   return (
@@ -332,7 +433,7 @@ export default function TransferPage() {
           <div className="mx-auto max-w-3xl pt-8 sm:pt-12">
             <div className="mb-8">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--heading)]">F-1 SEVIS transfer</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
+              <h1 ref={editHeadingRef} tabIndex={-1} className="mt-3 text-3xl font-semibold tracking-[-0.03em] outline-none sm:text-4xl">
                 Let&apos;s make a clear starting point.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--text)]">
@@ -444,11 +545,19 @@ export default function TransferPage() {
             chatMessages={chatMessages}
             isResponding={isResponding}
             submitChat={submitChat}
-            copyFeedback={copyFeedback}
+            copyStatuses={copyStatuses}
             copyText={copyText}
             detailsChanged={detailsChanged}
             references={references}
             referenceNotices={referenceNotices}
+            generatedPlan={generatedPlan}
+            planGenerating={planGenerating}
+            planError={planError}
+            planOutOfDate={planOutOfDate}
+            generatePlan={generatePlan}
+            checkedPlanItems={checkedPlanItems}
+            togglePlanItem={(id) => setCheckedPlanItems((current) => ({ ...current, [id]: !current[id] }))}
+            copyPlan={copyPlan}
           />
         )}
       </main>
@@ -465,11 +574,19 @@ function ConsultationView({
   chatMessages,
   isResponding,
   submitChat,
-  copyFeedback,
+  copyStatuses,
   copyText,
   detailsChanged,
   references,
   referenceNotices,
+  generatedPlan,
+  planGenerating,
+  planError,
+  planOutOfDate,
+  generatePlan,
+  checkedPlanItems,
+  togglePlanItem,
+  copyPlan,
 }: {
   form: TransferForm;
   summary: string;
@@ -479,17 +596,27 @@ function ConsultationView({
   chatMessages: DisplayChatMessage[];
   isResponding: boolean;
   submitChat: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  copyFeedback: string;
+  copyStatuses: Record<string, "success" | "error">;
   copyText: (text: string, label: string) => void;
   detailsChanged: boolean;
   references: PublicSevisTransferReference[];
   referenceNotices: string[];
+  generatedPlan: GeneratedPlan | null;
+  planGenerating: boolean;
+  planError: string;
+  planOutOfDate: boolean;
+  generatePlan: () => Promise<void>;
+  checkedPlanItems: Record<string, boolean>;
+  togglePlanItem: (id: string) => void;
+  copyPlan: () => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [openSources, setOpenSources] = useState<Record<number, boolean>>({});
   const [expandedQuotes, setExpandedQuotes] = useState<Record<string, boolean>>({});
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const actionButtonClass = "cursor-pointer rounded-full text-[var(--heading)] transition-colors hover:bg-[#D1E9EB] active:bg-[#B8DADD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2";
+  const copyStatusLabel = (key: string, label: string) => copyStatuses[key] === "success" ? "✓ Copied" : copyStatuses[key] === "error" ? "Copy failed" : label;
 
   useEffect(() => {
     const element = chatScrollRef.current;
@@ -532,10 +659,10 @@ function ConsultationView({
           <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] sm:text-2xl">A clearer conversation starts here.</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} className="rounded-full border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)]">
+          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>
             {detailsOpen ? "Hide details" : "Details"}
           </button>
-          <Link href="/" className="rounded-full border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)]">Exit demo</Link>
+          <Link href="/" className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>Exit demo</Link>
         </div>
       </div>
       <div className="mb-2 shrink-0"><DemoNotice /></div>
@@ -644,17 +771,53 @@ function ConsultationView({
           <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-6 shadow-[0_20px_60px_rgba(6,75,96,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Your situation summary</h2>
-              <button type="button" onClick={() => copyText(summary, "Summary")} className="text-xs font-semibold text-[var(--primary)] underline underline-offset-4">{copyFeedback || "Copy"}</button>
+              <button type="button" onClick={() => copyText(summary, "summary")} aria-live="polite" className={`${actionButtonClass} min-w-20 px-2 py-1 text-xs font-semibold underline underline-offset-4`}>{copyStatusLabel("summary", "Copy")}</button>
             </div>
             <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] p-3 text-sm leading-6 text-[var(--text)]">{summary}</p>
-            <button type="button" onClick={onEditDetails} className="mt-3 text-xs font-semibold text-[var(--primary)] underline underline-offset-4">Edit details</button>
-            <button type="button" onClick={() => copyText(`${summary}\n\nQuestions: ${form.questions || "None added"}`, "Summary and questions")} className="mt-3 w-full rounded-xl border border-[var(--primary)] px-4 py-2.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)]">Copy summary + questions</button>
+            <button type="button" onClick={onEditDetails} className={`${actionButtonClass} mt-3 px-2 py-1 text-xs font-semibold underline underline-offset-4`}>Edit details</button>
+            <button type="button" onClick={() => copyText(`${summary}\n\nQuestions: ${form.questions || "None added"}`, "summaryQuestions")} aria-live="polite" className={`${actionButtonClass} mt-3 flex min-h-10 w-full items-center justify-center rounded-xl border border-[var(--primary)] px-4 py-2.5 text-xs font-semibold`}>{copyStatusLabel("summaryQuestions", "Copy summary + questions")}</button>
           </section>
           <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface-muted)] p-6">
-            <h2 className="font-semibold">Preparation checklist</h2>
-            <ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--text)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Preparation plan</h2>
+                <p className="mt-1 text-xs leading-5 text-[var(--text)]">
+                  {generatedPlan ? "Your Claude-generated plan is shown below. You can regenerate it when your details change." : "Your basic preparation checklist is ready. Generate a Claude plan when you are ready."}
+                </p>
+              </div>
+              <button type="button" onClick={generatePlan} disabled={planGenerating} className="cursor-pointer rounded-xl bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[var(--heading)] active:bg-[var(--heading)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 disabled:cursor-wait disabled:bg-[var(--accent)]">
+                {planGenerating ? "Generating plan..." : generatedPlan ? "Regenerate plan" : "Generate my plan"}
+              </button>
+            </div>
+            {!generatedPlan ? <ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--text)]">
               {checklistFor(form).map((item) => <li key={item} className="flex gap-3"><span className="mt-1 h-4 w-4 shrink-0 rounded border border-[var(--primary)] bg-[var(--surface)]" />{item}</li>)}
-            </ul>
+            </ul> : null}
+            {planError ? <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--heading)]">{planError} <button type="button" onClick={generatePlan} className="font-semibold underline">Retry</button></p> : null}
+            {planOutOfDate ? <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--heading)]">Out of date: your structured details changed. Regenerate plan to use the latest information.</p> : null}
+            {generatedPlan ? (
+              <div className="mt-5 space-y-4 border-t border-[var(--accent)] pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text)]">
+                  <span className="font-semibold text-[var(--heading)]">Claude-generated</span>
+                  <button type="button" onClick={copyPlan} disabled={planOutOfDate} title={planOutOfDate ? "Regenerate the plan before copying it." : undefined} aria-live="polite" className={`${actionButtonClass} inline-flex min-w-[92px] items-center justify-center px-3 py-1 text-center text-xs font-semibold underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60`}>{planOutOfDate ? "Regenerate to copy" : copyStatusLabel("plan", "Copy plan")}</button>
+                </div>
+                <p className="text-sm leading-6">{generatedPlan.situationSummary}</p>
+                <p className="text-xs text-[var(--text)]">Generated {new Date(generatedPlan.generatedAt).toLocaleString()} · Policy verification dates below refer to the sources, not this plan.</p>
+                {generatedPlan.missingInformation.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Information to add</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.missingInformation.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+                <div>
+                  <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-[var(--heading)]">Preparation items</h3><span className="text-xs text-[var(--text)]">{generatedPlan.preparationItems.filter((item) => checkedPlanItems[item.id]).length}/{generatedPlan.preparationItems.length} complete</span></div>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {generatedPlan.preparationItems.map((item) => <li key={item.id} className="flex gap-2">
+                      <input type="checkbox" checked={checkedPlanItems[item.id] === true} onChange={() => togglePlanItem(item.id)} className="mt-1 h-4 w-4 accent-[var(--primary)]" />
+                      <span><strong>{item.title}</strong> <span className="text-xs text-[var(--text)]">({item.basisType})</span><br />{item.description}{item.referenceIds.length > 0 ? <><br /><span className="text-xs text-[var(--text)]">Source basis: {item.referenceIds.map((id) => generatedPlan.references.find((reference) => reference.id === id)?.title).filter(Boolean).join("; ")}</span></> : null}</span>
+                    </li>)}
+                  </ul>
+                </div>
+                {generatedPlan.currentDsoQuestions.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Questions for your current DSO</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.currentDsoQuestions.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+                {generatedPlan.targetDsoQuestions.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Questions for the target-school DSO</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.targetDsoQuestions.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+                {generatedPlan.coverageLimits.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Coverage limits</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.coverageLimits.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+                <div><h3 className="text-sm font-semibold text-[var(--heading)]">Plan sources</h3><ul className="mt-2 space-y-2 text-xs">{generatedPlan.references.map((reference) => <li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline">{reference.title}</a><br />{reference.publisher} · Verified {reference.lastVerifiedAt || "Not verified"} · {reference.schoolScope}</li>)}</ul></div>
+              </div>
+            ) : null}
           </section>
           <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/60 p-6">
             <h2 className="font-semibold">Sources</h2>
