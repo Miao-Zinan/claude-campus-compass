@@ -1,12 +1,24 @@
-<img src="public/campus-compass-icon.png" width="120" alt="Claude Campus Compass logo">
+<p align="center">
+  <img src="public/campus-compass-icon.png"
+       alt="Claude Campus Compass logo"
+       width="120">
+</p>
 
-# Claude Campus Compass
+<h1 align="center">Claude Campus Compass</h1>
 
-Claude Campus Compass is a student-first web app for helping university students
-navigate campus resources, policies, and everyday questions with more clarity.
-The current milestone provides a guided transfer form, a structured reference
-model, and a server-side chat boundary. It does not provide immigration
-eligibility decisions or policy conclusions.
+Claude Campus Compass helps F-1 international students enrolled at U.S. colleges and universities prepare for their first SEVIS transfer. It is designed for students who are unfamiliar with the process and unsure which information to gather or what to ask their international student advisers.
+
+The project aims to turn verified government guidance and school-specific instructions into understandable explanations, personalized preparation checklists, and focused questions for a Designated School Official (DSO).
+
+## Community and problem
+
+Our initial community is F-1 international students in the United States navigating a SEVIS transfer for the first time. Transfer information is spread across government websites and individual school pages, and students may struggle to distinguish general requirements from school-specific procedures.
+
+The project grew out of the founder’s own experience trying to understand student-status requirements and transfer procedures.
+
+## Current development status
+
+The current prototype includes a guided intake form, a situation summary, a preparation checklist, and a server-side chat API foundation. Claude API integration and verified policy references are not connected yet. The tool does not make immigration eligibility decisions or replace guidance from a DSO or qualified immigration attorney.
 
 ## Current architecture
 
