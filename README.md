@@ -24,13 +24,14 @@ The current prototype includes a guided intake form, a situation summary, a prep
 
 - `app/transfer/page.tsx` keeps the existing form flow and demo presentation.
 - `lib/transfer/` contains shared transfer types and formatting/checklist logic.
-- `lib/references/` defines the SEVIS transfer reference shape and an empty
-  production collection. The exported template is explicitly example-only and
-  is never used for answers.
+- `lib/references/` defines the SEVIS transfer reference shape and the small
+  reviewed production collection. The exported template is explicitly
+  example-only and is never used for answers.
 - `app/api/chat/route.ts` validates structured student data and chat history
   before calling the server-side service boundary.
-- `lib/chat/` owns the server-controlled system prompt and future Claude
-  integration. The browser cannot provide or override the system prompt.
+- `lib/chat/` owns the server-controlled system prompt and Claude service.
+  It uses Anthropic's official TypeScript SDK and document citations. The
+  browser cannot provide or override the system prompt.
 
 ## Reference verification workflow
 
@@ -42,10 +43,12 @@ with a current effective status and an actual verification record may later be
 provided to the Claude service. Student statements, source text, and URLs are
 data, not instructions.
 
-The reference collection is currently empty, so no policy guidance is generated.
-The chat endpoint intentionally returns `not_configured` with
-“Live guidance is not connected yet”. The existing Demo mode remains separate
-from live guidance and does not present simulated responses as real AI output.
+The chat endpoint only supplies currently active, reviewed references to the
+Claude service. Unverified references are excluded. Berkeley-specific material
+is returned only for a precisely matched current UC Berkeley school, and
+ordinary federal guidance is not treated as a complete OPT or other-status
+workflow. The existing Demo mode remains separate from live guidance and does
+not present simulated responses as real AI output.
 
 ## Tech stack
 
@@ -71,7 +74,22 @@ npm.cmd run build
 npm.cmd run start
 ```
 
-No Claude API key is required for the current demo. When configuring the future
-server-side integration, copy `.env.example` to `.env.local` and keep the
-resulting file out of version control. Use `ANTHROPIC_API_KEY` and
-`ANTHROPIC_MODEL` only on the server; do not use `NEXT_PUBLIC_` variants.
+Claude API access is server-side only. To enable live guidance locally:
+
+1. Copy `.env.example` to `.env.local`.
+2. Set `ANTHROPIC_API_KEY` to your local Anthropic API key.
+3. Set `ANTHROPIC_MODEL` to a model ID currently available to your Anthropic
+   account, using Anthropic's official model documentation or Console as the
+   source of truth. The application intentionally does not hard-code or guess
+   a model ID.
+4. Restart the development server.
+
+Keep `.env.local` out of version control. Do not use `NEXT_PUBLIC_` variables
+for the key. If either variable is empty, the endpoint returns
+`not_configured` without calling Claude. This repository does not claim that a
+live API request has been tested unless one is explicitly run with local
+configuration. `ANTHROPIC_MODEL` must be selected from the model IDs currently
+documented by Anthropic or shown in the Anthropic Console; the application does
+not guess a model ID. Citation behavior follows Anthropic's official
+[Messages API](https://platform.claude.com/docs/en/api/messages) and
+[citations documentation](https://platform.claude.com/docs/en/build-with-claude/citations).

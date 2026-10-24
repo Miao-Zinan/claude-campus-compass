@@ -15,4 +15,17 @@ export type ChatMessage = {
   text: string;
 };
 
+export type ChatCitation = {
+  referenceId: string;
+  title: string;
+  publisher: string;
+  url: string;
+  citedText: string;
+};
+
+export type ChatResponseBlock = {
+  text: string;
+  citations: ChatCitation[];
+};
+
 export type StudentTransferData = TransferForm;

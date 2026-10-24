@@ -55,5 +55,5 @@ export async function POST(request: Request) {
   }
 
   const result = await requestClaudeGuidance(body.studentData, body.messages);
-  return Response.json(result);
+  return Response.json(result, { status: result.status === "error" ? 502 : 200 });
 }

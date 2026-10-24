@@ -16,3 +16,5 @@ export type SevisTransferReference = {
   effectiveFrom: string | null;
   status: ReferenceStatus;
 };
+
+export type PublicSevisTransferReference = Omit<SevisTransferReference, "sourceText">;
