@@ -11,6 +11,16 @@ export type ClaudeServiceResult =
 const MAX_OUTPUT_TOKENS = 4096;
 export const REQUEST_TIMEOUT_MS = 20_000;
 
+export const NOT_CONFIGURED_RESULT = {
+  status: "not_configured",
+  message: "Live Claude guidance is not configured on this server",
+} as const;
+
+/** Checked by the routes before the shared AI quota is consumed. */
+export function isClaudeConfigured() {
+  return Boolean(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_MODEL);
+}
+
 function isRealAssistantMessage(message: ChatMessage) {
   return message.role === "assistant";
 }
@@ -24,8 +34,17 @@ export function createClaudeClient(options: { timeout?: number; maxRetries?: num
 }
 
 export function getClaudeErrorResult(error: unknown): Extract<ClaudeServiceResult, { status: "error" }> {
-  if (error instanceof Anthropic.AuthenticationError) {
+  if (error instanceof Anthropic.APIUserAbortError) {
+    return { status: "error", message: "The request was cancelled.", retryable: true };
+  }
+  if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
     return { status: "error", message: "Claude authentication failed. Check the server configuration.", retryable: false };
+  }
+  if (error instanceof Anthropic.NotFoundError) {
+    return { status: "error", message: "The configured Claude model is not available. Check the server configuration.", retryable: false };
+  }
+  if (error instanceof Anthropic.BadRequestError) {
+    return { status: "error", message: "Claude rejected this request. Retrying is unlikely to help until the server configuration or request is fixed.", retryable: false };
   }
   if (error instanceof Anthropic.RateLimitError) {
     return { status: "error", message: "Claude is temporarily rate limited. Please try again.", retryable: true };
@@ -45,12 +64,13 @@ export function getClaudeErrorResult(error: unknown): Extract<ClaudeServiceResul
 export async function requestClaudeGuidance(
   studentData: StudentTransferData,
   messages: ChatMessage[],
+  signal?: AbortSignal,
 ): Promise<ClaudeServiceResult> {
   const selection = getApplicableReferences(studentData);
   const { references, notices } = selection;
 
   if (!process.env.ANTHROPIC_API_KEY || !process.env.ANTHROPIC_MODEL || references.length === 0) {
-    return { status: "not_configured", message: "Live Claude guidance is not configured on this server" };
+    return NOT_CONFIGURED_RESULT;
   }
 
   const client = createClaudeClient();
@@ -84,7 +104,7 @@ export async function requestClaudeGuidance(
         { role: "user", content: [...documents, { type: "text", text: context }] },
         ...conversation,
       ],
-    });
+    }, { signal });
     console.info("[claude] response usage", {
       stop_reason: response.stop_reason,
       input_tokens: response.usage.input_tokens,

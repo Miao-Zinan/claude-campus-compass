@@ -163,18 +163,51 @@ function releaseAiRequest(endpoint: AiEndpoint) {
   if (state) state.activeRequests = Math.max(0, state.activeRequests - 1);
 }
 
+/** Reads at most maxBytes, stopping as soon as the limit is exceeded, even without a Content-Length header. */
 export async function readJsonBody(request: Request, maxBytes: number): Promise<unknown> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxBytes) {
     throw new Error("body_too_large");
   }
-  const bytes = await request.arrayBuffer();
-  if (bytes.byteLength > maxBytes) throw new Error("body_too_large");
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("body_too_large");
+      }
+      chunks.push(value);
+    }
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   try {
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch {
     throw new Error("invalid_json");
   }
+}
+
+export function bodyErrorResponse(error: unknown) {
+  const tooLarge = error instanceof Error && error.message === "body_too_large";
+  return Response.json(
+    { status: "invalid_request", message: tooLarge ? "Request body is too large." : "Request body must be valid JSON." },
+    { status: tooLarge ? 413 : 400 },
+  );
+}
+
+/** Checked before reading the body so a paused deployment does no further work. */
+export function pausedResponse() {
+  return aiRequestsEnabled() ? null : guardResponse({ allowed: false, reason: "paused", retryAfterSeconds: 0 });
 }
 
 export function guardResponse(result: Extract<GuardResult, { allowed: false }>) {
@@ -188,6 +221,16 @@ export function guardResponse(result: Extract<GuardResult, { allowed: false }>) 
     return Response.json(
       { status: "unavailable", message: "Shared AI request protection is unavailable. Please try again later." },
       { status: 503 },
+    );
+  }
+  if (result.reason === "busy") {
+    return Response.json(
+      {
+        status: "busy",
+        message: "Another AI request is still being processed. Please wait a few seconds and try again.",
+        retryAfterSeconds: result.retryAfterSeconds,
+      },
+      { status: 429, headers: { "Retry-After": String(result.retryAfterSeconds) } },
     );
   }
   const daily = result.reason === "daily";

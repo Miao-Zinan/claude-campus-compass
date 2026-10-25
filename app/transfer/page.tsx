@@ -12,6 +12,16 @@ import {
   formatSituation,
   getTargetSchool,
 } from "@/lib/transfer/logic";
+import { createLatestRequestTracker, describeGuardFailure, type AiRouteResult } from "@/lib/transfer/ai-status";
+import { buildChatHistory, isUnansweredUserMessage, latestChatAnnouncement } from "@/lib/transfer/chat-history";
+import {
+  approvedHref,
+  buildApprovedUrlSet,
+  citationMarkers,
+  citationSourceElementId,
+  numberCitationSources,
+} from "@/lib/transfer/citations";
+import { MAX_CHAT_MESSAGE_LENGTH, MAX_FIELD_LENGTH } from "@/lib/transfer/validation";
 import type {
   ChatCitation,
   ChatMessage,
@@ -40,16 +50,12 @@ type GeneratedPlan = PreparationPlan & {
   references: PlanReference[];
 };
 
-function safeHref(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
+type PlanError = {
+  message: string;
+  retryable: boolean;
+};
 
-function renderInlineMarkdown(text: string, onCitation: (index: number) => void) {
+function renderInlineMarkdown(text: string, onCitation: (index: number) => void, approvedUrls: ReadonlySet<string>) {
   const tokens = text.split(/(\*\*[^*]+\*\*|__[^_]+__|\[[^\]]+\]\([^)]+\)|`[^`]+`|\[\[CITATION:\d+\]\])/g);
   return tokens.map((token, index) => {
     if (/^\*\*[^*]+\*\*$/.test(token) || /^__[^_]+__$/.test(token)) {
@@ -65,17 +71,18 @@ function renderInlineMarkdown(text: string, onCitation: (index: number) => void)
     }
     const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (link) {
-      const href = safeHref(link[2]);
+      const href = approvedHref(link[2], approvedUrls);
       return href ? <a key={index} href={href} target="_blank" rel="noreferrer" className="break-words text-[var(--primary)] underline">{link[1]}</a> : <span key={index}>{link[1]}</span>;
     }
     return <span key={index}>{token}</span>;
   });
 }
 
-function MarkdownContent({ text, citationNumbers, onCitation }: {
+function MarkdownContent({ text, citationNumbers, onCitation, approvedUrls }: {
   text: string;
   citationNumbers: number[];
   onCitation: (index: number) => void;
+  approvedUrls: ReadonlySet<string>;
 }) {
   const lines = text.split(/\r?\n/);
   const blocks: ReactNode[] = [];
@@ -84,7 +91,7 @@ function MarkdownContent({ text, citationNumbers, onCitation }: {
   let paragraphLines: string[] = [];
   const flushParagraph = () => {
     if (paragraphLines.length === 0) return;
-    blocks.push(<p key={`paragraph-${blocks.length}`} className="my-2 whitespace-pre-wrap">{renderInlineMarkdown(paragraphLines.join("\n").trim(), onCitation)}</p>);
+    blocks.push(<p key={`paragraph-${blocks.length}`} className="my-2 whitespace-pre-wrap">{renderInlineMarkdown(paragraphLines.join("\n").trim(), onCitation, approvedUrls)}</p>);
     paragraphLines = [];
   };
   const flushList = () => {
@@ -92,9 +99,9 @@ function MarkdownContent({ text, citationNumbers, onCitation }: {
     flushParagraph();
     blocks.push(
       orderedList ? <ol key={`list-${blocks.length}`} className="my-3 list-decimal space-y-1 pl-5">
-        {listItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item, onCitation)}</li>)}
+        {listItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item, onCitation, approvedUrls)}</li>)}
       </ol> : <ul key={`list-${blocks.length}`} className="my-3 list-disc space-y-1 pl-5">
-        {listItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item, onCitation)}</li>)}
+        {listItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item, onCitation, approvedUrls)}</li>)}
       </ul>,
     );
     listItems = [];
@@ -114,7 +121,7 @@ function MarkdownContent({ text, citationNumbers, onCitation }: {
     flushList();
     if (heading) {
       flushParagraph();
-      blocks.push(<h3 key={`heading-${blocks.length}`} className="mt-4 mb-2 text-base font-semibold text-[var(--heading)]">{renderInlineMarkdown(heading[1], onCitation)}</h3>);
+      blocks.push(<h3 key={`heading-${blocks.length}`} className="mt-4 mb-2 text-base font-semibold text-[var(--heading)]">{renderInlineMarkdown(heading[1], onCitation, approvedUrls)}</h3>);
     } else if (line.trim()) {
       paragraphLines.push(line);
     } else {
@@ -175,6 +182,22 @@ function DemoNotice() {
   );
 }
 
+function CharacterCount({ id, length, max, label, showCount = true }: {
+  id: string;
+  length: number;
+  max: number;
+  label: string;
+  showCount?: boolean;
+}) {
+  const atLimit = length >= max;
+  if (!showCount && !atLimit) return null;
+  return (
+    <p id={id} className={`mt-2 text-xs ${atLimit ? "font-semibold text-[var(--heading)]" : "text-[var(--text)]"}`}>
+      {atLimit ? `${label} can be at most ${max.toLocaleString()} characters. Extra text is not added.` : `${length.toLocaleString()}/${max.toLocaleString()} characters`}
+    </p>
+  );
+}
+
 export default function TransferPage() {
   const [form, setForm] = useState<TransferForm>(emptyForm);
   const [step, setStep] = useState(1);
@@ -190,11 +213,13 @@ export default function TransferPage() {
   const [referenceNotices, setReferenceNotices] = useState<string[]>([]);
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedPlan | null>(null);
   const [planGenerating, setPlanGenerating] = useState(false);
-  const [planError, setPlanError] = useState("");
+  const [planError, setPlanError] = useState<PlanError | null>(null);
   const [planOutOfDate, setPlanOutOfDate] = useState(false);
   const [checkedPlanItems, setCheckedPlanItems] = useState<Record<string, boolean>>({});
-  const planRequestId = useRef(0);
+  const [planRequests] = useState(createLatestRequestTracker);
   const editHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => () => planRequests.cancel(), [planRequests]);
 
   useEffect(() => {
     if (window.location.search.includes("example=1")) {
@@ -263,7 +288,7 @@ export default function TransferPage() {
     setSummary(generatedSummary);
     setDetailsChanged(false);
     setGeneratedPlan(null);
-    setPlanError("");
+    setPlanError(null);
     setPlanOutOfDate(false);
     setCheckedPlanItems({});
     setChatMessages([
@@ -276,11 +301,17 @@ export default function TransferPage() {
     setStep(3);
   };
 
-  const editDetails = () => setStep(2);
+  const editDetails = () => {
+    // Cancel an in-flight plan so it cannot overlap with a regeneration after editing.
+    if (planGenerating) {
+      planRequests.cancel();
+      setPlanGenerating(false);
+      setPlanError({ message: "Plan generation was cancelled because you started editing your details. Generate the plan again when you are ready.", retryable: true });
+    }
+    setStep(2);
+  };
 
   const saveDetails = () => {
-    planRequestId.current += 1;
-    setPlanGenerating(false);
     setSummary(generatedSummary);
     setDetailsChanged(true);
     setPlanOutOfDate(Boolean(generatedPlan));
@@ -292,60 +323,52 @@ export default function TransferPage() {
     if (generatedPlan && !window.confirm("Regenerating will replace the current plan and its checked items. Continue?")) {
       return;
     }
-    const requestId = ++planRequestId.current;
+    const request = planRequests.start();
     setPlanGenerating(true);
-    setPlanError("");
+    setPlanError(null);
     try {
       const response = await fetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentData: form }),
+        signal: request.signal,
       });
-      const result: {
-        status?: string;
-        message?: string;
-        limit?: "minute" | "daily";
+      const result: AiRouteResult & {
         plan?: PreparationPlan;
         references?: PlanReference[];
         generatedAt?: string;
       } = await response.json();
-      if (response.status === 429) {
-        setPlanError(
-          result.limit === "daily"
-            ? "The shared daily AI request limit has been reached. Please try again tomorrow."
-            : result.limit === "minute"
-              ? "The shared short-term AI request limit has been reached. Please wait and try again."
-              : result.message || "Too many plan requests. Please wait and try again.",
-        );
+      if (!request.isCurrent()) return;
+      const guardMessage = describeGuardFailure(response.status, result);
+      if (guardMessage) {
+        setPlanError({ message: guardMessage, retryable: true });
         return;
       }
-      if (response.status === 503) {
-        setPlanError(result.message || "Live AI requests are temporarily paused.");
-        return;
-      }
-      if (requestId !== planRequestId.current) return;
       if (result.status !== "ready" || !result.plan || !result.references || !result.generatedAt) {
-        setPlanError(result.message || "The preparation plan could not be generated. Please try again.");
+        setPlanError({
+          message: result.message || "The preparation plan could not be generated. Please try again.",
+          retryable: result.retryable !== false,
+        });
         return;
       }
       setGeneratedPlan({ ...result.plan, references: result.references, generatedAt: result.generatedAt });
       setCheckedPlanItems({});
       setPlanOutOfDate(false);
     } catch {
-      if (requestId === planRequestId.current) {
-        setPlanError("The preparation plan could not be reached. Please try again.");
+      if (request.isCurrent()) {
+        setPlanError({ message: "The preparation plan could not be reached. Please try again.", retryable: true });
       }
     } finally {
-      if (requestId === planRequestId.current) setPlanGenerating(false);
+      if (request.isCurrent()) setPlanGenerating(false);
     }
   };
 
   const submitChat = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = chatInput.trim();
-    if (!message || isResponding) return;
-    const nextMessages: DisplayChatMessage[] = [...chatMessages, { role: "user", text: message }];
-    setChatMessages(nextMessages);
+    if (!message || isResponding || message.length > MAX_CHAT_MESSAGE_LENGTH) return;
+    const history = buildChatHistory(chatMessages, message);
+    setChatMessages([...chatMessages, { role: "user", text: message }]);
     setChatInput("");
     setIsResponding(true);
     try {
@@ -354,30 +377,22 @@ export default function TransferPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studentData: form,
-          messages: nextMessages
-            .filter((item) => item.kind === undefined)
-            .map(({ role, text }) => ({ role, text })),
+          messages: history,
         }),
       });
-      const result: {
-        status?: string;
-        message?: string;
-        limit?: "minute" | "daily";
+      const result: AiRouteResult & {
         blocks?: ChatResponseBlock[];
         truncated?: boolean;
       } = await response.json();
-      if (response.status === 429 || response.status === 503) {
-        const rateLimitMessage = result.limit === "daily"
-          ? "The shared daily AI request limit has been reached. Please try again tomorrow."
-          : result.limit === "minute"
-            ? "The shared short-term AI request limit has been reached. Please wait and try again."
-            : undefined;
+      const guardMessage = describeGuardFailure(response.status, result);
+      if (guardMessage) {
         setChatMessages((messages) => [
           ...messages,
           {
             role: "assistant",
             kind: "status",
-            text: rateLimitMessage || result.message || (response.status === 429 ? "Too many requests. Please wait and try again." : "Live AI requests are temporarily paused."),
+            text: guardMessage,
+            retryText: message,
           },
         ]);
         return;
@@ -392,7 +407,7 @@ export default function TransferPage() {
           blocks,
           citations: blocks?.flatMap((block) => block.citations),
           truncated: result.truncated,
-          retryText: result.status === "error" ? message : undefined,
+          retryText: result.status === "ready" ? undefined : message,
         },
       ]);
     } catch {
@@ -508,8 +523,9 @@ export default function TransferPage() {
                 <div className="space-y-6">
                   <div>
                     <label htmlFor="currentSchool" className="mb-2 block text-sm font-semibold text-[var(--heading)]">Current school</label>
-                    <input id="currentSchool" value={form.currentSchool} onChange={(event) => updateForm("currentSchool", event.target.value)} placeholder="e.g. Lakeview Community College" className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" aria-invalid={currentSchoolInvalid} required />
+                    <input id="currentSchool" value={form.currentSchool} onChange={(event) => updateForm("currentSchool", event.target.value)} placeholder="e.g. Lakeview Community College" maxLength={MAX_FIELD_LENGTH} aria-describedby="currentSchoolLimit" className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" aria-invalid={currentSchoolInvalid} required />
                     {form.currentSchool.length > 0 && currentSchoolInvalid ? <p className="mt-2 text-xs text-[var(--heading)]">Enter your current school name. It cannot be blank.</p> : null}
+                    <CharacterCount id="currentSchoolLimit" length={form.currentSchool.length} max={MAX_FIELD_LENGTH} label="School name" showCount={false} />
                   </div>
                   <div>
                     <label htmlFor="targetSchool" className="mb-2 block text-sm font-semibold text-[var(--heading)]">Target school</label>
@@ -527,11 +543,14 @@ export default function TransferPage() {
                           value={form.targetSchoolCustom}
                           onChange={(event) => updateForm("targetSchoolCustom", event.target.value)}
                           placeholder="e.g. Westbridge University"
+                          maxLength={MAX_FIELD_LENGTH}
+                          aria-describedby="targetSchoolCustomLimit"
                           className="min-h-12 w-full rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]"
                           aria-invalid={customTargetSchoolInvalid}
                           required
                         />
                         {customTargetSchoolInvalid ? <p className="mt-2 text-xs text-[var(--heading)]">Enter a school name. It cannot be blank.</p> : null}
+                        <CharacterCount id="targetSchoolCustomLimit" length={form.targetSchoolCustom.length} max={MAX_FIELD_LENGTH} label="School name" showCount={false} />
                       </div>
                     ) : null}
                   </div>
@@ -554,7 +573,8 @@ export default function TransferPage() {
                   <DateChoice id="programStart" label="Target program start date" value={form.programStart} onChange={(value) => updateForm("programStart", value)} />
                   <div>
                     <label htmlFor="questions" className="mb-2 block text-sm font-semibold text-[var(--heading)]">What would you like to ask? <span className="font-normal text-[var(--text)]">(optional)</span></label>
-                    <textarea id="questions" value={form.questions} onChange={(event) => updateForm("questions", event.target.value)} rows={4} placeholder="Add questions you want to discuss with your DSO..." className="w-full resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+                    <textarea id="questions" value={form.questions} onChange={(event) => updateForm("questions", event.target.value)} rows={4} maxLength={MAX_FIELD_LENGTH} aria-describedby="questionsCount" placeholder="Add questions you want to discuss with your DSO..." className="w-full resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+                    <CharacterCount id="questionsCount" length={form.questions.length} max={MAX_FIELD_LENGTH} label="Questions" />
                   </div>
                   <p className="text-xs leading-5 text-[var(--text)]">Dates can be marked as &quot;Not sure&quot;. No name, passport number, SEVIS ID, or files are collected.</p>
                 </div>
@@ -570,6 +590,7 @@ export default function TransferPage() {
         ) : (
           <ConsultationView
             form={form}
+            isExample={isExample}
             summary={summary}
             onEditDetails={editDetails}
             chatInput={chatInput}
@@ -599,6 +620,7 @@ export default function TransferPage() {
 
 function ConsultationView({
   form,
+  isExample,
   summary,
   onEditDetails,
   chatInput,
@@ -621,6 +643,7 @@ function ConsultationView({
   copyPlan,
 }: {
   form: TransferForm;
+  isExample: boolean;
   summary: string;
   onEditDetails: () => void;
   chatInput: string;
@@ -635,7 +658,7 @@ function ConsultationView({
   referenceNotices: string[];
   generatedPlan: GeneratedPlan | null;
   planGenerating: boolean;
-  planError: string;
+  planError: PlanError | null;
   planOutOfDate: boolean;
   generatePlan: () => Promise<void>;
   checkedPlanItems: Record<string, boolean>;
@@ -646,7 +669,22 @@ function ConsultationView({
   const [openSources, setOpenSources] = useState<Record<number, boolean>>({});
   const [expandedQuotes, setExpandedQuotes] = useState<Record<string, boolean>>({});
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const workspaceHeadingRef = useRef<HTMLHeadingElement>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const referenceUrls = useMemo(() => references.map((reference) => reference.url), [references]);
+  const chatAnnouncement = latestChatAnnouncement(chatMessages, isResponding);
+  const planAnnouncement = planGenerating
+    ? "Generating preparation plan."
+    : planError
+      ? `Preparation plan: ${planError.message}`
+      : generatedPlan
+        ? "Preparation plan ready."
+        : "";
+
+  useEffect(() => {
+    workspaceHeadingRef.current?.focus();
+  }, []);
   const actionButtonClass = "cursor-pointer rounded-full text-[var(--heading)] transition-colors hover:bg-[#D1E9EB] active:bg-[#B8DADD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2";
   const copyStatusLabel = (key: string, label: string) => copyStatuses[key] === "success" ? "✓ Copied" : copyStatuses[key] === "error" ? "Copy failed" : label;
 
@@ -685,10 +723,13 @@ function ConsultationView({
 
   return (
     <div className="flex flex-col pt-1 sm:pt-3 lg:h-full lg:min-h-0">
+      {/* Announce only the newest status or answer, not the whole conversation. */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{chatAnnouncement}</div>
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{planAnnouncement}</div>
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--heading)]">Your transfer planning workspace</p>
-          <h1 className="mt-1 text-lg font-semibold tracking-[-0.03em] sm:text-2xl">A clearer conversation starts here.</h1>
+          <h1 ref={workspaceHeadingRef} tabIndex={-1} className="mt-1 text-lg font-semibold tracking-[-0.03em] outline-none sm:text-2xl">A clearer conversation starts here.</h1>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>
@@ -705,7 +746,7 @@ function ConsultationView({
               <h2 className="font-semibold">Ask about your situation</h2>
               <p className="mt-1 text-xs text-[var(--text)]">Ask a focused question about the information you provided.</p>
             </div>
-            <span className="rounded-full bg-[var(--surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--heading)]">Fictional example</span>
+            {isExample ? <span className="rounded-full bg-[var(--surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--heading)]">Fictional example</span> : null}
           </div>
           {detailsChanged ? (
             <p className="mb-4 rounded-xl border border-[var(--accent)] bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--heading)]">
@@ -717,74 +758,76 @@ function ConsultationView({
               <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`w-full ${message.role === "user" ? "max-w-[min(75%,680px)]" : "max-w-full"}`}>
                   <p className={`mb-2 text-xs font-semibold uppercase tracking-[0.12em] ${message.role === "user" ? "text-right text-[var(--heading)]" : "text-left text-[var(--heading)]"}`}>
-                    {message.kind === "claude" ? "Claude" : message.kind === "error" ? "Service error" : message.kind === "status" ? "Service status" : "Fictional example"}
+                    {message.role === "user" ? "You" : message.kind === "claude" ? "Claude" : message.kind === "error" ? "Service error" : message.kind === "status" ? "Service status" : isExample ? "Fictional example" : "Campus Compass"}
                   </p>
-                  {message.kind === "claude" && message.blocks ? (
-                    <div className="max-w-none text-sm">
-                      {(() => {
-                        const citations = message.citations || [];
-                        const referenceNumbers = new Map<string, number>();
-                        citations.forEach((citation) => {
-                          if (!referenceNumbers.has(citation.referenceId)) {
-                            referenceNumbers.set(citation.referenceId, referenceNumbers.size + 1);
-                          }
-                        });
-                        const markdown = message.blocks.map((block) => {
-                          const markers = block.citations
-                            .map((citation) => referenceNumbers.get(citation.referenceId))
-                            .filter((number): number is number => number !== undefined)
-                            .filter((number, markerIndex, numbers) => numbers.indexOf(number) === markerIndex)
-                            .map((number) => `[[CITATION:${number}]]`)
-                            .join(" ");
-                          return `${block.text}${markers ? ` ${markers}` : ""}`;
-                        }).join("\n");
-                        return <MarkdownContent text={markdown} citationNumbers={[]} onCitation={(number) => {
-                          setOpenSources((current) => ({ ...current, [index]: true }));
-                          window.setTimeout(() => document.getElementById(`citation-source-${index}-${number}`)?.focus(), 0);
-                        }} />;
-                      })()}
-                      {message.truncated ? <p className="mt-3 rounded-lg border border-[var(--accent)] bg-[var(--surface-muted)] p-3 text-sm font-semibold text-[var(--heading)]">This answer reached its output limit and may be incomplete. Please ask a focused follow-up question.</p> : null}
-                    </div>
-                  ) : (
-                    <div className={`text-sm ${message.role === "user" ? "rounded-2xl rounded-br-sm bg-[var(--primary)] px-4 py-3 text-white" : ""}`}>
-                      <MarkdownContent text={message.text} citationNumbers={[]} onCitation={() => undefined} />
-                    </div>
-                  )}
-                {message.kind === "error" && message.retryText ? (
-                  <button type="button" onClick={() => setChatInput(message.retryText || "")} className="mt-1 text-xs font-semibold text-[var(--primary)] underline underline-offset-2">
-                    Retry
+                  {(() => {
+                    const sources = numberCitationSources(message.citations || []);
+                    const approvedUrls = buildApprovedUrlSet([...referenceUrls, ...sources.map((source) => source.url)]);
+                    const content = message.kind === "claude" && message.blocks ? (
+                      <div className="max-w-none text-sm">
+                        <MarkdownContent
+                          text={message.blocks.map((block) => {
+                            const markers = citationMarkers(block.citations, sources).map((number) => `[[CITATION:${number}]]`).join(" ");
+                            return `${block.text}${markers ? ` ${markers}` : ""}`;
+                          }).join("\n")}
+                          citationNumbers={[]}
+                          approvedUrls={approvedUrls}
+                          onCitation={(number) => {
+                            setOpenSources((current) => ({ ...current, [index]: true }));
+                            window.setTimeout(() => document.getElementById(citationSourceElementId(index, number))?.focus(), 0);
+                          }}
+                        />
+                        {message.truncated ? <p className="mt-3 rounded-lg border border-[var(--accent)] bg-[var(--surface-muted)] p-3 text-sm font-semibold text-[var(--heading)]">This answer reached its output limit and may be incomplete. Please ask a focused follow-up question.</p> : null}
+                      </div>
+                    ) : (
+                      <div className={`text-sm ${message.role === "user" ? "rounded-2xl rounded-br-sm bg-[var(--primary)] px-4 py-3 text-white" : ""}`}>
+                        <MarkdownContent text={message.text} citationNumbers={[]} approvedUrls={approvedUrls} onCitation={() => undefined} />
+                      </div>
+                    );
+                    if (message.kind !== "claude" || sources.length === 0) return content;
+                    const expanded = openSources[index] === true;
+                    return <>
+                      {content}
+                      <div className="mt-3 w-full">
+                        <button type="button" onClick={() => setOpenSources((current) => ({ ...current, [index]: !expanded }))} aria-expanded={expanded} className="text-xs font-semibold text-[var(--primary)] underline underline-offset-2">
+                          Sources · {sources.length}
+                        </button>
+                        {expanded ? <ul className="mt-2 space-y-3 rounded-xl border border-[var(--accent)] bg-[var(--surface)] p-3 text-xs leading-5">
+                          {sources.map((source) => <li key={source.referenceId} id={citationSourceElementId(index, source.number)} tabIndex={-1}>
+                            <span className="mr-1 font-semibold text-[var(--heading)]">[{source.number}]</span>
+                            <a href={source.url} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline underline-offset-2">{source.title}</a>
+                            <p className="mt-1 text-[var(--text)]">{source.publisher}</p>
+                            {source.citedTexts.map((citedText, citedTextIndex) => {
+                              const quoteKey = `${index}-${source.referenceId}-${citedTextIndex}`;
+                              const expandedQuote = expandedQuotes[quoteKey] === true;
+                              return <div key={citedTextIndex} className="mt-1">
+                                <p className={`break-words ${expandedQuote ? "" : "line-clamp-3"}`}>{citedText}</p>
+                                <button type="button" onClick={() => setExpandedQuotes((current) => ({ ...current, [quoteKey]: !expandedQuote }))} aria-expanded={expandedQuote} className="font-semibold text-[var(--primary)] underline underline-offset-2">
+                                  {expandedQuote ? "Show less" : "Show more"}
+                                </button>
+                              </div>;
+                            })}
+                            <p className="mt-1 italic">This source supports the explanation; it does not determine personal eligibility.</p>
+                          </li>)}
+                        </ul> : null}
+                      </div>
+                    </>;
+                  })()}
+                {isUnansweredUserMessage(chatMessages, index) ? (
+                  <p className="mt-1 text-right text-xs text-[var(--text)]">Not answered. This question is not included in later conversation context.</p>
+                ) : null}
+                {(message.kind === "error" || message.kind === "status") && message.retryText ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatInput(message.retryText || "");
+                      chatInputRef.current?.focus();
+                    }}
+                    className="mt-1 text-xs font-semibold text-[var(--primary)] underline underline-offset-2"
+                  >
+                    Put question back in the message box
                   </button>
                 ) : null}
-                {message.kind === "claude" && message.citations && message.citations.length > 0 ? (() => {
-                  const citations = message.citations;
-                  const sources = Array.from(new Map(citations.map((citation) => {
-                    const citedTexts = Array.from(new Set(citations.filter((item) => item.referenceId === citation.referenceId).map((item) => item.citedText)));
-                    return [citation.referenceId, { ...citation, citedTexts }];
-                  })).values());
-                  const expanded = openSources[index] === true;
-                  return <div className="mt-3 w-full">
-                    <button type="button" onClick={() => setOpenSources((current) => ({ ...current, [index]: !expanded }))} aria-expanded={expanded} className="text-xs font-semibold text-[var(--primary)] underline underline-offset-2">
-                      Sources · {sources.length}
-                    </button>
-                    {expanded ? <ul className="mt-2 space-y-3 rounded-xl border border-[var(--accent)] bg-[var(--surface)] p-3 text-xs leading-5">
-                      {sources.map((source) => <li key={source.referenceId} id={`citation-source-${index}-${citations.findIndex((citation) => citation.referenceId === source.referenceId) + 1}`} tabIndex={-1}>
-                        <a href={source.url} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline underline-offset-2">{source.title}</a>
-                        <p className="mt-1 text-[var(--text)]">{source.publisher}</p>
-                        {source.citedTexts.map((citedText, citedTextIndex) => {
-                          const quoteKey = `${index}-${source.referenceId}-${citedTextIndex}`;
-                          const expandedQuote = expandedQuotes[quoteKey] === true;
-                          return <div key={citedTextIndex} className="mt-1">
-                            <p className={`break-words ${expandedQuote ? "" : "line-clamp-3"}`}>{citedText}</p>
-                            <button type="button" onClick={() => setExpandedQuotes((current) => ({ ...current, [quoteKey]: !expandedQuote }))} aria-expanded={expandedQuote} className="font-semibold text-[var(--primary)] underline underline-offset-2">
-                              {expandedQuote ? "Show less" : "Show more"}
-                            </button>
-                          </div>;
-                        })}
-                        <p className="mt-1 italic">This source supports the explanation; it does not determine personal eligibility.</p>
-                      </li>)}
-                    </ul> : null}
-                  </div>;
-                })() : null}
                 </div>
               </div>
             ))}
@@ -793,7 +836,10 @@ function ConsultationView({
           </div>
           <form onSubmit={submitChat} autoComplete="off" className="flex shrink-0 flex-col gap-2 border-t border-[var(--accent)] pt-4 sm:flex-row sm:pt-5">
             <label htmlFor="chatInput" className="sr-only">Ask a question</label>
-            <textarea id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={handleChatInputKeyDown} placeholder="Type a question for the demo..." autoComplete="off" rows={2} className="min-h-12 min-w-0 flex-1 resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-base outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <textarea ref={chatInputRef} id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={handleChatInputKeyDown} placeholder="Type a question for the demo..." autoComplete="off" rows={2} maxLength={MAX_CHAT_MESSAGE_LENGTH} aria-describedby="chatInputCount" className="min-h-12 w-full resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-base outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+              <CharacterCount id="chatInputCount" length={chatInput.length} max={MAX_CHAT_MESSAGE_LENGTH} label="A message" />
+            </div>
             <button type="submit" disabled={!chatInput.trim() || isResponding} className="min-h-12 rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--heading)] disabled:cursor-not-allowed disabled:bg-[var(--accent)] sm:self-end">Send</button>
           </form>
         </section>
@@ -824,7 +870,7 @@ function ConsultationView({
             {!generatedPlan ? <ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--text)]">
               {checklistFor(form).map((item) => <li key={item} className="flex gap-3"><span className="mt-1 h-4 w-4 shrink-0 rounded border border-[var(--primary)] bg-[var(--surface)]" />{item}</li>)}
             </ul> : null}
-            {planError ? <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--heading)]">{planError} <button type="button" onClick={generatePlan} className="font-semibold underline">Retry</button></p> : null}
+            {planError ? <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-xs leading-5 text-[var(--heading)]">{planError.message} {planError.retryable && !planGenerating ? <button type="button" onClick={generatePlan} className="font-semibold underline">Retry</button> : null}</p> : null}
             {planOutOfDate ? <p className="mt-4 rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--heading)]">Out of date: your structured details changed. Regenerate plan to use the latest information.</p> : null}
             {generatedPlan ? (
               <div className="mt-5 space-y-4 border-t border-[var(--accent)] pt-4">
@@ -838,9 +884,9 @@ function ConsultationView({
                 <div>
                   <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold text-[var(--heading)]">Preparation items</h3><span className="text-xs text-[var(--text)]">{generatedPlan.preparationItems.filter((item) => checkedPlanItems[item.id]).length}/{generatedPlan.preparationItems.length} complete</span></div>
                   <ul className="mt-2 space-y-2 text-sm">
-                    {generatedPlan.preparationItems.map((item) => <li key={item.id} className="flex gap-2">
-                      <input type="checkbox" checked={checkedPlanItems[item.id] === true} onChange={() => togglePlanItem(item.id)} className="mt-1 h-4 w-4 accent-[var(--primary)]" />
-                      <span><strong>{item.title}</strong> <span className="text-xs text-[var(--text)]">({item.basisType})</span><br />{item.description}{item.referenceIds.length > 0 ? <><br /><span className="text-xs text-[var(--text)]">Source basis: {item.referenceIds.map((id) => generatedPlan.references.find((reference) => reference.id === id)?.title).filter(Boolean).join("; ")}</span></> : null}</span>
+                    {generatedPlan.preparationItems.map((item, itemIndex) => <li key={item.id} className="flex gap-2">
+                      <input id={`plan-item-${itemIndex}`} type="checkbox" checked={checkedPlanItems[item.id] === true} onChange={() => togglePlanItem(item.id)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--primary)]" />
+                      <span><label htmlFor={`plan-item-${itemIndex}`} className="cursor-pointer"><strong>{item.title}</strong></label> <span className="text-xs text-[var(--text)]">({item.basisType})</span><br />{item.description}{item.basisType === "source_based" && item.referenceIds.length > 0 ? <><br /><span className="text-xs text-[var(--text)]">Source basis: {item.referenceIds.map((id) => generatedPlan.references.find((reference) => reference.id === id)?.title).filter(Boolean).join("; ")}</span></> : null}</span>
                     </li>)}
                   </ul>
                 </div>

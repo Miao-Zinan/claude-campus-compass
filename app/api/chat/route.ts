@@ -1,10 +1,15 @@
-import { requestClaudeGuidance } from "@/lib/chat/claude-service";
+import { isClaudeConfigured, NOT_CONFIGURED_RESULT, requestClaudeGuidance } from "@/lib/chat/claude-service";
 import type { ChatMessage } from "@/lib/transfer/types";
-import { validateStudentData } from "@/lib/transfer/validation";
-import { acquireAiRequest, AI_BODY_LIMITS, guardResponse, readJsonBody } from "@/lib/server/ai-guard";
+import { MAX_CHAT_MESSAGE_LENGTH, MAX_CHAT_MESSAGES, validateStudentData } from "@/lib/transfer/validation";
+import {
+  acquireAiRequest,
+  AI_BODY_LIMITS,
+  bodyErrorResponse,
+  guardResponse,
+  pausedResponse,
+  readJsonBody,
+} from "@/lib/server/ai-guard";
 
-const MAX_MESSAGES = 20;
-const MAX_MESSAGE_LENGTH = 4000;
 export const maxDuration = 30;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -12,29 +17,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validateMessages(value: unknown): value is ChatMessage[] {
-  if (!Array.isArray(value) || value.length > MAX_MESSAGES) return false;
+  if (!Array.isArray(value) || value.length > MAX_CHAT_MESSAGES) return false;
   return value.every(
     (message) =>
       isRecord(message) &&
       (message.role === "user" || message.role === "assistant") &&
       typeof message.text === "string" &&
       message.text.trim().length > 0 &&
-      message.text.length <= MAX_MESSAGE_LENGTH,
+      message.text.length <= MAX_CHAT_MESSAGE_LENGTH,
   );
 }
 
+// Order: AI switch, bounded body read, validation, configuration, then the shared quota,
+// so rejected or unconfigured requests do not consume AI invocation quota.
 export async function POST(request: Request) {
-  const guard = await acquireAiRequest("chat");
-  if (!guard.allowed) return guardResponse(guard);
+  const paused = pausedResponse();
+  if (paused) return paused;
+
   let body: unknown;
   try {
     body = await readJsonBody(request, AI_BODY_LIMITS.chat);
   } catch (error) {
-    guard.release();
-    return Response.json(
-      { status: "invalid_request", message: error instanceof Error && error.message === "body_too_large" ? "Request body is too large." : "Request body must be valid JSON." },
-      { status: error instanceof Error && error.message === "body_too_large" ? 413 : 400 },
-    );
+    return bodyErrorResponse(error);
   }
 
   if (
@@ -42,15 +46,18 @@ export async function POST(request: Request) {
     !validateStudentData(body.studentData) ||
     !validateMessages(body.messages)
   ) {
-    guard.release();
     return Response.json(
       { status: "invalid_request", message: "Student data and chat messages are invalid." },
       { status: 400 },
     );
   }
 
+  if (!isClaudeConfigured()) return Response.json(NOT_CONFIGURED_RESULT);
+
+  const guard = await acquireAiRequest("chat");
+  if (!guard.allowed) return guardResponse(guard);
   try {
-    const result = await requestClaudeGuidance(body.studentData, body.messages);
+    const result = await requestClaudeGuidance(body.studentData, body.messages, request.signal);
     return Response.json(result, { status: result.status === "error" ? 502 : 200 });
   } finally {
     guard.release();

@@ -56,6 +56,9 @@ export function getApplicableReferences(studentData: StudentTransferData): Refer
   if (studentData.situation === "Currently on OPT") {
     notices.push("OPT-specific transfer coverage is incomplete. Do not treat the general F-1 transfer information as a complete OPT action plan.");
   }
+  if (studentData.situation === "Completed my program") {
+    notices.push("Transfer coverage after completing a program is incomplete. The available references describe ordinary enrolled-student transfers; confirm the applicable process with your DSO.");
+  }
   if (studentData.situation === "Other" || studentData.situation === "Not sure") {
     notices.push("Your situation is not covered by an assumed ordinary enrolled-student workflow. Confirm the applicable process with your DSO.");
   }

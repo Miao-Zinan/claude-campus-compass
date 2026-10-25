@@ -69,16 +69,49 @@ Implemented now:
   in-memory checklist state.
 - Server-controlled Claude chat with a 20-second SDK timeout, no SDK retries,
   citation blocks, citation validation, safe Markdown rendering, and a
-  max-token truncation warning.
+  max-token truncation warning. Each citation marker number matches the
+  numbered entry in that answer's **Sources** list. Links written by the model
+  are clickable only when they match a server-provided reference URL;
+  other link text is shown as plain text.
+- Multi-turn chat context: each request sends the most recent answered
+  question/Claude-reply pairs plus the new question, within the server's
+  20-message limit. Demo, service-status, and error messages are never sent.
+  A question that received an error or status response instead of an answer
+  is marked "Not answered" and is left out of later context; its
+  "Put question back in the message box" control refills the input without
+  sending automatically.
 - Explicit structured preparation-plan generation with a 60-second SDK
   timeout, no SDK retries, up to six preparation items, and up to three
-  current-DSO and target-school-DSO questions each.
+  current-DSO and target-school-DSO questions each. Plan errors are reported
+  by cause:
+  - output cut off: `stop_reason` is `max_tokens` or
+    `model_context_window_exceeded`;
+  - unreadable structured output, with no truncation evidence;
+  - refusal;
+  - configuration problems (authentication, permission, or unknown model);
+  - rejected requests;
+  - timeouts.
+
+  **Retry** is shown only for errors where trying again may help.
+- Opening **Edit details** while a plan is generating cancels that browser
+  request and explains the cancellation, so it cannot overlap with a
+  regeneration. Responses from an earlier plan request never change the
+  current plan, error, or loading state. Cancelling stops the browser
+  request and is passed to the Claude SDK where the platform propagates
+  the request signal. It does not guarantee that upstream processing or
+  billing stops.
+- Accessibility: the workspace heading receives focus on entry. Plan
+  checkboxes are labelled by their item titles. Two polite live regions
+  announce only the current loading state, the newest chat reply or service
+  status, and plan status, not the whole conversation.
 - Plan item basis types:
   `source_based`, `preparation`, and `confirm_with_dso`.
 - Server-side source selection and reference-ID validation. The browser
   receives public reference metadata, not the complete `sourceText`.
 - Request body validation, chat-history limits, endpoint rate protection, and
-  an `AI_REQUESTS_ENABLED` server switch.
+  an `AI_REQUESTS_ENABLED` server switch. Text fields are limited to 500
+  characters and chat messages to 4,000 characters on both the client and the
+  server. The current situation must be one of the five supported values.
 - Responsive consultation layout with desktop internal scrolling and a
   mobile layout that remains naturally scrollable.
 
@@ -95,10 +128,12 @@ Current reviewed coverage:
   policy has been integrated. School-specific transfer-in guidance is not
   currently represented by the UC Berkeley source.
 - Other school-specific procedures and a complete OPT-specific transfer
-  workflow are not covered. For OPT, Other, and Not sure situations, the
-  application is instructed to focus on preparation information and questions
-  for a DSO rather than present the ordinary enrolled-student workflow as a
-  complete answer.
+  workflow are not covered. Currently on OPT, Completed my program, Other, and
+  Not sure are treated as outside the documented ordinary enrolled-student
+  workflow. Each shows a coverage notice, and the application is instructed
+  to focus on preparation information and questions for a DSO rather than
+  present the ordinary enrolled-student workflow as a complete answer. Their
+  generated plans cannot contain `source_based` items.
 - An ICE/SEVP reference remains in the review collection as `unverified` and
   is excluded from the active answer reference set.
 
@@ -110,7 +145,10 @@ Chat citations and plan references are different:
 - A generated plan includes reference IDs attached to validated
   `source_based` items and a list of available background references. Those
   references do not claim that every listed source was quoted in the plan.
-  `preparation` and `confirm_with_dso` items may have no reference IDs.
+- Reference-ID rule: only `source_based` items carry reference IDs, and only
+  they show a "Source basis" line. Any unknown reference ID rejects the plan.
+  Valid reference IDs returned on `preparation` or `confirm_with_dso` items are
+  removed by the server, so those items never imply verified source support.
 
 Not implemented or intentionally out of scope:
 
@@ -125,8 +163,16 @@ Not implemented or intentionally out of scope:
 Run these commands from the project root.
 
 The project uses Next.js `16.4.3`, React `19.3.0`, TypeScript, Tailwind CSS,
-the Anthropic TypeScript SDK, and the Upstash Redis SDK. Next.js in the
-installed dependency set requires Node.js `20.9.0` or newer.
+the Anthropic TypeScript SDK, and the Upstash Redis SDK.
+
+Node.js requirements:
+
+- Running and building the app: Node.js `20.9.0` or newer, as required by
+  the installed Next.js.
+- Running the offline tests (`npm.cmd test`): Node.js `22.18.0` or newer,
+  which provides type stripping enabled by default and `module.registerHooks`.
+- Recommended for development: Node.js `22.18.0` or newer, so both work. The
+  current checks were run with Node.js `24.16.0`.
 
 ```powershell
 npm.cmd install
@@ -145,10 +191,20 @@ npm.cmd run start
 Available checks:
 
 ```powershell
+npm.cmd test
 npm.cmd run lint
+npx.cmd tsc --noEmit
 npm.cmd run build
 git diff --check
 ```
+
+`npm.cmd test` runs the committed offline regression tests in `tests/` with
+Node's built-in test runner and type stripping (Node.js 22.18 or newer; no
+extra dependencies). `tests/register-hooks.mjs` resolves the `@/` import alias
+and replaces `fetch` with a function that throws, so the tests cannot contact
+Anthropic, Upstash, or any other service. They do not read `.env.local`.
+`npm.cmd run build` downloads the Geist fonts through `next/font/google`, so a
+normal build needs network access.
 
 Create local configuration from the example without committing secrets:
 
@@ -190,9 +246,10 @@ settings instead. Restart local development after changing variables. Vercel
 environment-variable changes apply to new deployments, so redeploy after
 changing them.
 
-If the Anthropic key or model is missing, the service returns
-`not_configured` without calling Claude. If the AI switch is disabled, the
-request is paused before the service call.
+If the AI switch is disabled, the request is paused before its body is read.
+If the Anthropic key or model is missing, a valid request returns
+`not_configured` without calling Claude and without consuming the shared AI
+quota.
 
 ## Upstash Redis and request protection
 
@@ -209,6 +266,19 @@ For Preview and Production:
    [`@upstash/redis`](https://upstash.com/docs/redis/howto/connect-with-upstash-redis)
    package.
 
+Each AI route handles a request in this order:
+
+1. Check the AI switch.
+2. Read the body, up to the limit.
+3. Validate the request.
+4. Check that the key and model are configured.
+5. Take the shared quota.
+6. Call Claude.
+
+Invalid, oversized, paused, and unconfigured requests therefore do not
+consume the shared AI invocation quota. Such requests are bounded only by the
+body limits and platform limits. This is not comprehensive abuse prevention.
+
 The guard uses one atomic Redis script before the Claude call:
 
 | Endpoint | UTC minute limit | UTC day limit |
@@ -219,9 +289,14 @@ The guard uses one atomic Redis script before the Claude call:
 These are whole-application limits across users and instances. They are not
 per-user quotas and are not an exact dollar budget. Short-term or daily
 exhaustion returns HTTP `429` with a `Retry-After` value. The UI distinguishes
-short-term waiting from the next-UTC-day limit.
+short-term waiting from the next-UTC-day limit. When this server instance is
+already processing its maximum number of concurrent AI requests, it returns
+HTTP `429` with status `busy`. The UI shows a separate "still being processed"
+message for this case, not a rate-limit message.
 
-The existing request-body limits are:
+The existing request-body limits are listed below. The body is read in chunks
+and reading stops once the limit is exceeded, even without a `Content-Length`
+header.
 
 - Chat: 256 KiB.
 - Plan: 64 KiB.
@@ -241,11 +316,35 @@ fallback is limited to one running process and is not global protection for
 multiple Vercel instances. The implementation retains a per-instance
 concurrency cap; it is not a global concurrency limit.
 
-The repository has offline mock coverage for allow, minute limit, daily limit,
-Redis exception, Redis timeout, missing production configuration, and the
-paused switch. Those tests do not connect to Redis or Claude. Live
-multi-instance, hosted Redis-failure, and production-quota behavior still need
-deployment-specific verification.
+Testing history and current coverage:
+
+- **Historical checks (not in the repository):** during development, temporary
+  offline mock tests for the request guard covered allow, minute limit, daily
+  limit, Redis exception, Redis timeout, missing production configuration, and
+  the paused switch. They were run, then deleted, and are not committed.
+- **Committed tests (`npm.cmd test`):** chat-history building and limits,
+  route rejection of oversized or over-long history and unsupported
+  situations, situation and field-length validation, restricted-status
+  coverage notices, plan validation (duplicate item IDs, reference-ID rule,
+  restricted `source_based` items), citation numbering, and approved-link
+  filtering. They also cover:
+  - route ordering: invalid, oversized (including chunked bodies without
+    `Content-Length`), paused, and unconfigured requests do not touch the
+    quota;
+  - Redis-exception and missing-production-configuration fail-closed
+    responses;
+  - busy versus rate-limit responses;
+  - plan error classification from mocked Anthropic responses: truncation,
+    parse failure, refusal, configuration, rejected requests, and
+    cancellation;
+  - stale-request tracking and live-region text.
+
+  Redis is a local mock, and Anthropic responses come from a mocked `fetch`.
+  The minute limit, daily limit, and Redis timeout paths are not yet covered
+  by committed tests.
+
+Live multi-instance, hosted Redis-failure, and production-quota behavior still
+need deployment-specific verification.
 
 ## Vercel deployment
 
@@ -319,8 +418,10 @@ Important areas:
 - `app/page.tsx`: home page and entry points.
 - `app/transfer/page.tsx`: intake flow, consultation workspace, Markdown and
   citation display, plan controls, and in-memory UI state.
-- `lib/transfer/`: shared transfer types, formatting, checklist logic, and
-  input validation.
+- `lib/transfer/`: shared transfer types, formatting, checklist logic, input
+  validation and limits, supported/restricted situation definitions, chat
+  history building, and citation numbering/approved-link helpers.
+- `tests/`: committed offline regression tests and the Node test loader hook.
 - `lib/references/`: reviewed reference records, precise school matching, and
   public metadata conversion.
 - `lib/chat/claude-service.ts`: server-only Claude client, system prompt,
@@ -346,7 +447,8 @@ Common responses:
 - `200`: `ready`, `not_configured`, or a structured service result.
 - `400`: invalid JSON, student data, or chat history.
 - `413`: request body too large.
-- `429`: shared minute or daily limit reached.
+- `429`: shared minute or daily limit reached (`rate_limited`), or this
+  instance is busy with another AI request (`busy`).
 - `503`: AI paused or shared Redis protection unavailable.
 - `502`: an upstream Claude service error.
 
@@ -359,12 +461,22 @@ situation summary, missing information, preparation items, DSO questions, and
 coverage limits.
 
 Each item contains an ID, title, short description, basis type, and reference
-IDs. The server rejects unknown reference IDs, unsupported `source_based`
-items for OPT/Other/Not sure statuses, missing restricted-status coverage
-limits, excessive item/question counts, and invalid item descriptions.
+IDs. The server rejects unknown reference IDs, duplicate item IDs, unsupported
+`source_based` items for OPT/Completed my program/Other/Not sure statuses,
+missing restricted-status coverage limits, excessive item/question counts, and
+invalid item descriptions. It removes reference IDs from non-`source_based`
+items.
 
 It uses the same common error classes as chat where applicable, plus
-structured-output, validation, timeout, and truncation failures. A successful
+plan-specific failures:
+
+- truncation, reported only when `stop_reason` confirms it;
+- unreadable structured output;
+- refusal;
+- plan validation failures;
+- timeouts.
+
+Each error response includes `retryable`. A successful
 plan includes server-resolved reference metadata; URLs, titles, publishers,
 and IDs are not generated by the model.
 
