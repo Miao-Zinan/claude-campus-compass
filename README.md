@@ -1,10 +1,17 @@
+<h1 align="center">Claude Campus Compass</h1>
+
 <p align="center">
-  <img src="public/campus-compass-icon.png"
-       alt="Claude Campus Compass logo"
-       width="120">
+  <a href="https://youtu.be/9cACY0B8GlI">
+    <img src="docs/images/00-cover.png"
+         alt="Claude Campus Compass cover: compass logo with the tagline “A clearer path for international students.” Select to watch the demo video on YouTube.">
+  </a>
 </p>
 
-<h1 align="center">Claude Campus Compass</h1>
+<p align="center">
+  <a href="https://youtu.be/9cACY0B8GlI"><strong>▶ Watch the demo on YouTube</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://claude-campus-compass.vercel.app">Try the live site</a>
+</p>
 
 Claude Campus Compass is an information-navigation tool for international
 students in the United States. Its current MVP focuses on preparing for an
@@ -22,6 +29,70 @@ and generate an on-demand preparation plan.
 The product does **not** assess immigration eligibility, give legal
 conclusions, approve a transfer, or replace a Designated School Official (DSO)
 or qualified immigration attorney.
+
+## Product walkthrough
+
+The screens below use the app's clearly marked fictional example data
+(Lakeview Community College and Northbridge University are not real student
+records). Select a group heading to expand or collapse it.
+
+<details open>
+<summary><strong>Desktop walkthrough (01–06)</strong></summary>
+
+**01 · Home.** Two entry points: plan your own SEVIS transfer, or try a
+clearly marked fictional example.
+
+![Home page with the headline "Your next step starts with a clearer plan," Plan My SEVIS Transfer and Try an Example buttons, and a panel listing a situation summary, a preparation checklist, and questions for a DSO.](docs/images/01-home.png)
+
+**02 · Your situation.** The first intake step asks for the current school,
+target school, and current situation. The current school decides which
+reviewed school-specific references apply; the target school adds context
+only.
+
+![Intake step one with Current school, Target school, and Current situation fields, beside notes explaining what each field is used for.](docs/images/02-intake-situation.png)
+
+**03 · Dates and questions.** Program dates can be left as "Not sure," and an
+optional question shapes the summary and plan. The form does not ask for a
+name, passport number, SEVIS ID, or files.
+
+![Intake step two with a program end date, a target start date marked Not sure, and an optional question box, shown with a "Fictional example loaded" banner.](docs/images/03-intake-dates-questions.png)
+
+**04 · Transfer workspace.** Chat sits beside a Details panel with the
+situation summary and preparation plan. Drag the divider to resize, hide
+Details to widen the chat, or use Reset layout to restore the default split.
+
+![Workspace with the chat panel on the left, the situation summary with Copy and Edit details on the right, a draggable divider between them, and Reset layout, Hide details, and Exit demo controls.](docs/images/04-transfer-workspace.png)
+
+**05 · Ask and review sources.** Claude's reply separates what the student
+said from what the supplied source states. The Sources panel lists the
+references available for review; being listed does not mean a reference was
+cited in a particular reply.
+
+![Chat with a Claude reply split into "What you told me" and "What the source states," next to a Generate my plan button and a Sources panel listing a U.S. Department of Homeland Security F-1 transfer page with a View original source link.](docs/images/05-chat-and-sources.png)
+
+**06 · Preparation plan.** On request, Claude prepares a plan with checkable
+items labeled by basis type, plus questions for the current and target-school
+DSOs. Regenerate it after details change. The chat also flags coverage gaps
+when school-specific guidance is not available.
+
+![Claude-generated preparation plan with six checkable items tagged source_based, preparation, or confirm_with_dso, a 2/6 progress count, DSO questions, and a chat reply describing a coverage gap.](docs/images/06-preparation-plan.png)
+
+</details>
+
+<details>
+<summary><strong>Mobile layout (07–08)</strong></summary>
+
+**07 · Mobile home and intake.** The home page, overview, and both intake
+steps on a phone-width screen.
+
+![Four mobile screens: the home page, the "What you'll walk away with" overview, the situation intake step, and the dates and questions step.](docs/images/07-mobile-home-and-intake.png)
+
+**08 · Mobile workspace.** Chat, the summary and plan, and Sources stack in
+normal page flow so the page scrolls naturally.
+
+![Three mobile workspace screens: the chat panel, the situation summary with a preparation plan, and the Sources panel noting that school-specific guidance is not available yet.](docs/images/08-mobile-workspace.png)
+
+</details>
 
 ## Live demo and quick start
 
