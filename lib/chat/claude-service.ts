@@ -4,7 +4,7 @@ import { getApplicableReferences } from "@/lib/references/matching";
 import type { ChatCitation, ChatMessage, ChatResponseBlock, StudentTransferData } from "@/lib/transfer/types";
 
 export type ClaudeServiceResult =
-  | { status: "not_configured"; message: "Live guidance is not connected yet" }
+  | { status: "not_configured"; message: "Live Claude guidance is not configured on this server" }
   | { status: "ready"; blocks: ChatResponseBlock[]; truncated: boolean }
   | { status: "error"; message: string; retryable: boolean };
 
@@ -18,7 +18,7 @@ function isRealAssistantMessage(message: ChatMessage) {
 export function createClaudeClient(options: { timeout?: number; maxRetries?: number } = {}) {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
-    maxRetries: options.maxRetries ?? 1,
+    maxRetries: options.maxRetries ?? 0,
     timeout: options.timeout ?? REQUEST_TIMEOUT_MS,
   });
 }
@@ -50,7 +50,7 @@ export async function requestClaudeGuidance(
   const { references, notices } = selection;
 
   if (!process.env.ANTHROPIC_API_KEY || !process.env.ANTHROPIC_MODEL || references.length === 0) {
-    return { status: "not_configured", message: "Live guidance is not connected yet" };
+    return { status: "not_configured", message: "Live Claude guidance is not configured on this server" };
   }
 
   const client = createClaudeClient();

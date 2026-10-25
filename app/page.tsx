@@ -68,7 +68,7 @@ export default function Home() {
             <p className="mt-8 text-sm leading-6 text-[var(--text)]">
               <strong className="font-semibold text-[var(--heading)]">Powered by Claude</strong>
               <br />
-              Demo mode — reference materials are available in the transfer workspace; live guidance depends on server configuration.
+              Demo mode — verified federal guidance and limited UC Berkeley transfer-out guidance are available in the transfer workspace. Live Claude guidance and plan generation depend on server configuration.
             </p>
           </aside>
         </div>

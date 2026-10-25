@@ -308,6 +308,14 @@ export default function TransferPage() {
         references?: PlanReference[];
         generatedAt?: string;
       } = await response.json();
+      if (response.status === 429) {
+        setPlanError(result.message || "Too many plan requests. Please wait and try again.");
+        return;
+      }
+      if (response.status === 503) {
+        setPlanError(result.message || "Live AI requests are temporarily paused.");
+        return;
+      }
       if (requestId !== planRequestId.current) return;
       if (result.status !== "ready" || !result.plan || !result.references || !result.generatedAt) {
         setPlanError(result.message || "The preparation plan could not be generated. Please try again.");
@@ -350,6 +358,17 @@ export default function TransferPage() {
         blocks?: ChatResponseBlock[];
         truncated?: boolean;
       } = await response.json();
+      if (response.status === 429 || response.status === 503) {
+        setChatMessages((messages) => [
+          ...messages,
+          {
+            role: "assistant",
+            kind: "status",
+            text: result.message || (response.status === 429 ? "Too many requests. Please wait and try again." : "Live AI requests are temporarily paused."),
+          },
+        ]);
+        return;
+      }
       const blocks = result.status === "ready" ? result.blocks || [] : undefined;
       setChatMessages((messages) => [
         ...messages,
@@ -411,7 +430,7 @@ export default function TransferPage() {
       generatedPlan.targetDsoQuestions.join("\n- "),
       "Coverage limits:",
       generatedPlan.coverageLimits.join("\n- ") || "None stated",
-      "Applicable references:",
+      "Available background references (not a complete OPT-specific process):",
       sources || "None",
     ].join("\n"), "plan");
   };
@@ -815,7 +834,7 @@ function ConsultationView({
                 {generatedPlan.currentDsoQuestions.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Questions for your current DSO</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.currentDsoQuestions.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
                 {generatedPlan.targetDsoQuestions.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Questions for the target-school DSO</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.targetDsoQuestions.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
                 {generatedPlan.coverageLimits.length > 0 ? <div><h3 className="text-sm font-semibold text-[var(--heading)]">Coverage limits</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{generatedPlan.coverageLimits.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
-                <div><h3 className="text-sm font-semibold text-[var(--heading)]">Plan sources</h3><ul className="mt-2 space-y-2 text-xs">{generatedPlan.references.map((reference) => <li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline">{reference.title}</a><br />{reference.publisher} · Verified {reference.lastVerifiedAt || "Not verified"} · {reference.schoolScope}</li>)}</ul></div>
+                <div><h3 className="text-sm font-semibold text-[var(--heading)]">Available background references</h3><p className="mt-1 text-xs leading-5 text-[var(--text)]">These references provide background context and do not constitute a complete OPT-specific process.</p><ul className="mt-2 space-y-2 text-xs">{generatedPlan.references.map((reference) => <li key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer" className="font-semibold text-[var(--primary)] underline">{reference.title}</a><br />{reference.publisher} · Verified {reference.lastVerifiedAt || "Not verified"} · {reference.schoolScope}</li>)}</ul></div>
               </div>
             ) : null}
           </section>

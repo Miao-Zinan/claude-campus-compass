@@ -10,7 +10,7 @@ import type {
 } from "@/lib/transfer/types";
 
 export type PlanServiceResult =
-  | { status: "not_configured"; message: "Live guidance is not connected yet" }
+  | { status: "not_configured"; message: "Live Claude guidance is not configured on this server" }
   | { status: "ready"; plan: PreparationPlan; references: PlanReference[]; generatedAt: string }
   | { status: "error"; message: string; retryable: boolean };
 
@@ -118,7 +118,7 @@ export async function requestPreparationPlan(studentData: StudentTransferData): 
   const startedAt = Date.now();
   const { references, notices } = getApplicableReferences(studentData);
   if (!process.env.ANTHROPIC_API_KEY || !process.env.ANTHROPIC_MODEL || references.length === 0) {
-    return { status: "not_configured", message: "Live guidance is not connected yet" };
+    return { status: "not_configured", message: "Live Claude guidance is not configured on this server" };
   }
 
   const referenceIds = new Set(references.map((reference) => reference.id));

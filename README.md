@@ -18,7 +18,7 @@ The project grew out of the founder’s own experience trying to understand stud
 
 ## Current development status
 
-The current prototype includes a guided intake form, a situation summary, a preparation checklist, and a server-side chat API foundation. Claude API integration and verified policy references are not connected yet. The tool does not make immigration eligibility decisions or replace guidance from a DSO or qualified immigration attorney.
+The current prototype includes a guided intake form, a situation summary, a preparation checklist, a server-side Claude chat service with citations, and on-demand structured preparation plan generation. Verified federal F-1 guidance is available, with limited UC Berkeley transfer-out guidance only when the current school is precisely matched as UC Berkeley. Other school-specific guidance and complete OPT-specific transfer coverage are not available. The tool does not make immigration eligibility decisions or replace guidance from a DSO or qualified immigration attorney. Refreshing the page clears the in-memory chat, plan, and checkbox state.
 
 ## Current architecture
 
@@ -32,6 +32,10 @@ The current prototype includes a guided intake form, a situation summary, a prep
 - `lib/chat/` owns the server-controlled system prompt and Claude service.
   It uses Anthropic's official TypeScript SDK and document citations. The
   browser cannot provide or override the system prompt.
+- `app/api/chat` and `app/api/plan` use a small in-memory, per-process request
+  guard for body-size, rate, and concurrency limits. This protects one running
+  instance only; a multi-instance or serverless deployment needs a shared
+  rate-limit service or an upstream gateway for global quota protection.
 
 ## Reference verification workflow
 
@@ -82,7 +86,10 @@ Claude API access is server-side only. To enable live guidance locally:
    account, using Anthropic's official model documentation or Console as the
    source of truth. The application intentionally does not hard-code or guess
    a model ID.
-4. Restart the development server.
+4. Set `AI_REQUESTS_ENABLED=true` to allow paid AI requests. Any other value,
+   including a missing or empty variable and `false`, pauses paid AI requests
+   while leaving the pages, forms, and existing in-memory results available.
+5. Restart the development server.
 
 Keep `.env.local` out of version control. Do not use `NEXT_PUBLIC_` variables
 for the key. If either variable is empty, the endpoint returns
@@ -93,3 +100,18 @@ documented by Anthropic or shown in the Anthropic Console; the application does
 not guess a model ID. Citation behavior follows Anthropic's official
 [Messages API](https://platform.claude.com/docs/en/api/messages) and
 [citations documentation](https://platform.claude.com/docs/en/build-with-claude/citations).
+Chat and preparation-plan requests each make one upstream Claude attempt:
+server-side SDK retries are disabled for both endpoints. The page retains
+manual retry actions, but it never automatically resends a failed request.
+
+### Deployment checks
+
+The deployment must run the App Router API routes in a Node.js runtime with
+outbound HTTPS access to Anthropic, server-only environment variables, and
+route execution limits of at least 30 seconds for chat and 70 seconds for plan
+generation. The configured platform must allow the selected model, request
+body sizes, and the required function duration under its actual plan; these
+limits are not assumed to be available on every hosting tier. `ANTHROPIC_API_KEY`
+must never use a `NEXT_PUBLIC_` prefix. The built-in request guard is only
+single-instance protection and must be replaced or supplemented by a shared
+limiter before multi-instance production use.
