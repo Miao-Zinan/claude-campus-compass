@@ -6,136 +6,423 @@
 
 <h1 align="center">Claude Campus Compass</h1>
 
-Claude Campus Compass helps F-1 international students enrolled at U.S. colleges and universities prepare for their first SEVIS transfer. It is designed for students who are unfamiliar with the process and unsure which information to gather or what to ask their international student advisers.
+Claude Campus Compass is an information-navigation tool for international
+students in the United States. Its current MVP focuses on preparing for an
+F-1 SEVIS transfer: organizing a student's situation, finding the right
+questions for a school adviser, and explaining a small set of reviewed
+reference materials.
 
-The project aims to turn verified government guidance and school-specific instructions into understandable explanations, personalized preparation checklists, and focused questions for a Designated School Official (DSO).
+Students often have to combine federal guidance with school-specific
+instructions, while transfer procedures and required conversations differ by
+school and situation. This project helps make that preparation more
+structured. Claude can organize the information a student provides, explain
+the supplied reference text, show citations when a chat answer uses a source,
+and generate an on-demand preparation plan.
 
-## Community and problem
+The product does **not** assess immigration eligibility, give legal
+conclusions, approve a transfer, or replace a Designated School Official (DSO)
+or qualified immigration attorney.
 
-Our initial community is F-1 international students in the United States navigating a SEVIS transfer for the first time. Transfer information is spread across government websites and individual school pages, and students may struggle to distinguish general requirements from school-specific procedures.
+## Live demo and quick start
 
-The project grew out of the founder’s own experience trying to understand student-status requirements and transfer procedures.
+**Live demo:** [claude-campus-compass.vercel.app](https://claude-campus-compass.vercel.app)
 
-## Current development status
+The home page offers two paths:
 
-The current prototype includes a guided intake form, a situation summary, a preparation checklist, a server-side Claude chat service with citations, and on-demand structured preparation plan generation. Verified federal F-1 guidance is available, with limited UC Berkeley transfer-out guidance only when the current school is precisely matched as UC Berkeley. Other school-specific guidance and complete OPT-specific transfer coverage are not available. The tool does not make immigration eligibility decisions or replace guidance from a DSO or qualified immigration attorney. Refreshing the page clears the in-memory chat, plan, and checkbox state.
+- **Plan My SEVIS Transfer** starts with blank fields for a student's own
+  situation.
+- **Try an Example** opens the same flow with clearly marked fictional data.
+  It is useful for testing the interface, but it is not a real student's
+  record. If live AI is enabled, chat and plan requests made from example mode
+  still consume the deployment's shared AI request limits.
 
-## Current architecture
+The transfer workspace flow is:
 
-- `app/transfer/page.tsx` keeps the existing form flow and demo presentation.
-- `lib/transfer/` contains shared transfer types and formatting/checklist logic.
-- `lib/references/` defines the SEVIS transfer reference shape and the small
-  reviewed production collection. The exported template is explicitly
-  example-only and is never used for answers.
-- `app/api/chat/route.ts` validates structured student data and chat history
-  before calling the server-side service boundary.
-- `lib/chat/` owns the server-controlled system prompt and Claude service.
-  It uses Anthropic's official TypeScript SDK and document citations. The
-  browser cannot provide or override the system prompt.
-- `app/api/chat` and `app/api/plan` use a small in-memory, per-process request
-  guard for body-size, rate, and concurrency limits. This protects one running
-  instance only; a multi-instance or serverless deployment needs a shared
-  rate-limit service or an upstream gateway for global quota protection.
+1. Enter the current school, target school, current situation, dates, and
+   optional questions.
+2. Review the structured situation summary.
+3. Ask a focused question in the chat workspace.
+4. Read the response and, when the response contains citations, open the
+   per-answer **Sources** section to inspect the cited excerpt and original
+   URL.
+5. Select **Generate my plan** when a plan is useful. Generation is explicit;
+   it does not run after every chat message.
+6. Review and check preparation items, copy the plan or summary, and edit
+   details when needed.
+7. If structured details change, the existing plan is marked **Out of date**.
+   Regenerate it before treating it as current; an out-of-date plan cannot be
+   copied.
 
-## Reference verification workflow
+Chat and plan state is held in page memory. Refreshing the page clears the
+chat, generated plan, and checked plan items. On desktop, **Details** toggles
+the summary, preparation plan, and reference panel; hiding it expands the
+chat across the main content area. On mobile, the chat and Details content are
+stacked in normal document flow so the page can scroll naturally.
 
-References must be added to the server-side collection only after their source
-text, publisher, URL, school scope, status, effective date, and verification
-date have been reviewed. `lastVerifiedAt` may remain empty; it must not be
-filled automatically or treated as proof of verification. Only references
-with a current effective status and an actual verification record may later be
-provided to the Claude service. Student statements, source text, and URLs are
-data, not instructions.
+## Current capabilities and coverage
 
-The chat endpoint only supplies currently active, reviewed references to the
-Claude service. Unverified references are excluded. Berkeley-specific material
-is returned only for a precisely matched current UC Berkeley school, and
-ordinary federal guidance is not treated as a complete OPT or other-status
-workflow. The existing Demo mode remains separate from live guidance and does
-not present simulated responses as real AI output.
+Implemented now:
 
-## Tech stack
+- Guided F-1 transfer intake form with validation for structured student data.
+- Fictional example mode kept separate from real Claude response labels.
+- Situation summary, basic preparation checklist, editable details, and
+  in-memory checklist state.
+- Server-controlled Claude chat with a 20-second SDK timeout, no SDK retries,
+  citation blocks, citation validation, safe Markdown rendering, and a
+  max-token truncation warning.
+- Explicit structured preparation-plan generation with a 60-second SDK
+  timeout, no SDK retries, up to six preparation items, and up to three
+  current-DSO and target-school-DSO questions each.
+- Plan item basis types:
+  `source_based`, `preparation`, and `confirm_with_dso`.
+- Server-side source selection and reference-ID validation. The browser
+  receives public reference metadata, not the complete `sourceText`.
+- Request body validation, chat-history limits, endpoint rate protection, and
+  an `AI_REQUESTS_ENABLED` server switch.
+- Responsive consultation layout with desktop internal scrolling and a
+  mobile layout that remains naturally scrollable.
 
-- Next.js with the App Router
-- TypeScript
-- Tailwind CSS
+Current reviewed coverage:
+
+- Federal F-1 guidance for ordinary enrolled-student transfers between
+  SEVP-certified schools, including a separately identified pre-start arrival
+  exception.
+- UC Berkeley transfer-out guidance only when the **current school** is
+  precisely matched as UC Berkeley or an implemented alias. Berkeley City
+  College, another school whose name contains “Berkeley,” and an unqualified
+  “Berkeley” are not automatically treated as UC Berkeley.
+- The target school name does not mean that the target school's transfer-in
+  policy has been integrated. School-specific transfer-in guidance is not
+  currently represented by the UC Berkeley source.
+- Other school-specific procedures and a complete OPT-specific transfer
+  workflow are not covered. For OPT, Other, and Not sure situations, the
+  application is instructed to focus on preparation information and questions
+  for a DSO rather than present the ordinary enrolled-student workflow as a
+  complete answer.
+- An ICE/SEVP reference remains in the review collection as `unverified` and
+  is excluded from the active answer reference set.
+
+Chat citations and plan references are different:
+
+- A chat answer contains citation blocks only for sources that the upstream
+  response actually cited and that the server successfully mapped to a
+  supplied reference.
+- A generated plan includes reference IDs attached to validated
+  `source_based` items and a list of available background references. Those
+  references do not claim that every listed source was quoted in the plan.
+  `preparation` and `confirm_with_dso` items may have no reference IDs.
+
+Not implemented or intentionally out of scope:
+
+- J-1, CPT, or expanded visa-status workflows.
+- A complete OPT-specific action plan.
+- Automatic student-status updates inferred from chat.
+- Persistent accounts, database storage, or persistent chat/plan history.
+- Real-time school-policy crawling or general legal/eligibility decisions.
 
 ## Local development
 
-Requirements: Node.js 20.9 or newer.
+Run these commands from the project root.
 
-```bash
+The project uses Next.js `16.4.3`, React `19.3.0`, TypeScript, Tailwind CSS,
+the Anthropic TypeScript SDK, and the Upstash Redis SDK. Next.js in the
+installed dependency set requires Node.js `20.9.0` or newer.
+
+```powershell
 npm.cmd install
 npm.cmd run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
-Create a production build and run it locally with:
+Create and run the production build locally:
 
-```bash
+```powershell
 npm.cmd run build
 npm.cmd run start
 ```
 
-Claude API access is server-side only. To enable live guidance locally:
+Available checks:
 
-1. Copy `.env.example` to `.env.local`.
-2. Set `ANTHROPIC_API_KEY` to your local Anthropic API key.
-3. Set `ANTHROPIC_MODEL` to a model ID currently available to your Anthropic
-   account, using Anthropic's official model documentation or Console as the
-   source of truth. The application intentionally does not hard-code or guess
-   a model ID.
-4. Set `AI_REQUESTS_ENABLED=true` to allow paid AI requests. Any other value,
-   including a missing or empty variable and `false`, pauses paid AI requests
-   while leaving the pages, forms, and existing in-memory results available.
-5. For Preview and Production deployments, set `UPSTASH_REDIS_REST_URL` and
-   `UPSTASH_REDIS_REST_TOKEN` from the Upstash Redis Console. These are
-   server-only variables; never use a `NEXT_PUBLIC_` prefix.
-6. Restart the development server.
+```powershell
+npm.cmd run lint
+npm.cmd run build
+git diff --check
+```
 
-Keep `.env.local` out of version control. Do not use `NEXT_PUBLIC_` variables
-for the key or Redis credentials. If either Anthropic variable is empty, the
-endpoint returns `not_configured` without calling Claude. In Preview and
-Production, missing or unavailable Redis returns HTTP 503 and never calls
-Claude. In local development without Redis configuration, the existing
-single-instance in-memory protection is used instead. This repository does not
-claim that a live API request or Redis connection has been tested unless one is
-explicitly run with local configuration. `ANTHROPIC_MODEL` must be selected from
-the model IDs currently
-documented by Anthropic or shown in the Anthropic Console; the application does
-not guess a model ID. Citation behavior follows Anthropic's official
-[Messages API](https://platform.claude.com/docs/en/api/messages) and
-[citations documentation](https://platform.claude.com/docs/en/build-with-claude/citations).
-Chat and preparation-plan requests each make one upstream Claude attempt:
-server-side SDK retries are disabled for both endpoints. The page retains
-manual retry actions, but it never automatically resends a failed request.
+Create local configuration from the example without committing secrets:
 
-### Shared AI request limits
+```powershell
+Copy-Item .env.example .env.local
+```
 
-Preview and Production use Upstash Redis through the official
-`@upstash/redis` SDK. An atomic Redis script checks and increments both limits
-before Claude is called:
+Fill the required values locally, then restart the development server after
+changing them. Do not read, print, commit, or upload `.env.local` as part of
+development or troubleshooting.
 
-- Chat: 12 requests per UTC minute and 100 requests per UTC day.
-- Preparation plan: 4 requests per UTC minute and 20 requests per UTC day.
+## Environment variables and Claude API setup
 
-These are whole-application limits across all users and instances, not per-user
-allocations and not an exact dollar budget. Short-term exhaustion returns HTTP
-429 with a minute-based `Retry-After`; daily exhaustion returns HTTP 429 with a
-next-UTC-day `Retry-After`. Redis failures and timeouts fail closed with HTTP
-503 rather than bypassing the limiter. The SDK's allow-on-timeout behavior is
-not used. The in-memory concurrent-request cap remains only a per-instance
-defense and is not a global concurrency limit.
+Copy the names from [.env.example](./.env.example). Use placeholders only:
 
-### Deployment checks
+| Variable | Purpose | Sensitive? | Required when |
+| --- | --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Server-side authentication for Claude | Yes | A live chat or plan request is desired |
+| `ANTHROPIC_MODEL` | Model ID passed to the Anthropic SDK | No, but deployment-specific | A live chat or plan request is desired |
+| `AI_REQUESTS_ENABLED` | Server-side paid-AI master switch | No | Must be exactly `true` to allow requests |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST endpoint | Sensitive configuration | Preview/Production shared limiting |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST authentication token | Yes | Preview/Production shared limiting |
 
-The deployment must run the App Router API routes in a Node.js runtime with
-outbound HTTPS access to Anthropic, server-only environment variables, and
-route execution limits of at least 30 seconds for chat and 70 seconds for plan
-generation. The configured platform must allow the selected model, request
-body sizes, and the required function duration under its actual plan; these
-limits are not assumed to be available on every hosting tier. `ANTHROPIC_API_KEY`
-must never use a `NEXT_PUBLIC_` prefix. The built-in request guard is only
-single-instance protection and must be replaced or supplemented by a shared
-limiter before multi-instance production use.
+`AI_REQUESTS_ENABLED` is parsed strictly: only the exact string `true`
+enables requests. Missing, empty, `false`, `TRUE`, or any other value disables
+AI requests.
+
+The application does not hard-code or guess a model ID. Choose a model
+available to the account from Anthropic's [models
+documentation](https://docs.anthropic.com/en/docs/about-claude/models) or the
+Anthropic Console. For key management, see Anthropic's [API
+keys](https://docs.anthropic.com/en/api/getting-started#api-keys)
+documentation.
+
+Anthropic keys and Redis credentials are server-only. Never rename them with a
+`NEXT_PUBLIC_` prefix. `.env.local` is a local file and is not automatically
+uploaded to Vercel; configure deployment variables in the Vercel project
+settings instead. Restart local development after changing variables. Vercel
+environment-variable changes apply to new deployments, so redeploy after
+changing them.
+
+If the Anthropic key or model is missing, the service returns
+`not_configured` without calling Claude. If the AI switch is disabled, the
+request is paused before the service call.
+
+## Upstash Redis and request protection
+
+For Preview and Production:
+
+1. Create an Upstash Redis database in the [Upstash
+   Console](https://console.upstash.com/).
+2. From the database details, copy its REST URL and a writable REST token.
+   Upstash's [Redis getting-started
+   guide](https://upstash.com/docs/redis/overall/getstarted) describes the
+   setup.
+3. Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` as server-side
+   Vercel variables. The app uses the official
+   [`@upstash/redis`](https://upstash.com/docs/redis/howto/connect-with-upstash-redis)
+   package.
+
+The guard uses one atomic Redis script before the Claude call:
+
+| Endpoint | UTC minute limit | UTC day limit |
+| --- | ---: | ---: |
+| `/api/chat` | 12 | 100 |
+| `/api/plan` | 4 | 20 |
+
+These are whole-application limits across users and instances. They are not
+per-user quotas and are not an exact dollar budget. Short-term or daily
+exhaustion returns HTTP `429` with a `Retry-After` value. The UI distinguishes
+short-term waiting from the next-UTC-day limit.
+
+The existing request-body limits are:
+
+- Chat: 256 KiB.
+- Plan: 64 KiB.
+- Chat history: at most 20 messages, with each message at most 4,000
+  characters.
+
+Chat uses a 20-second SDK timeout and a 30-second route limit. Plan generation
+uses a 60-second SDK timeout and a 70-second route limit. Both Claude clients
+have `maxRetries: 0`; the UI offers manual retry but does not automatically
+resend paid requests.
+
+Preview/Production fail closed with HTTP `503` when Redis configuration is
+missing or Redis is unavailable/times out. The application does not allow the
+Claude call to bypass shared protection in those cases. Local development
+without Redis configuration uses the in-memory request guard instead. That
+fallback is limited to one running process and is not global protection for
+multiple Vercel instances. The implementation retains a per-instance
+concurrency cap; it is not a global concurrency limit.
+
+The repository has offline mock coverage for allow, minute limit, daily limit,
+Redis exception, Redis timeout, missing production configuration, and the
+paused switch. Those tests do not connect to Redis or Claude. Live
+multi-instance, hosted Redis-failure, and production-quota behavior still need
+deployment-specific verification.
+
+## Vercel deployment
+
+### Import and build
+
+1. Import the GitHub repository into Vercel.
+2. Use the Next.js framework preset.
+3. Keep the repository root as the project root; the app is not in a
+   subdirectory.
+4. Use the package scripts already in `package.json`. The production build is
+   `npm.cmd run build`; Vercel normally detects the equivalent build command
+   automatically.
+5. Configure all server-side variables from the table above in the appropriate
+   Vercel environments.
+
+The checked-in [vercel.json](./vercel.json) sets the configured Vercel
+Function region to `sfo1`:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["sfo1"]
+}
+```
+
+This is a deployment configuration value, not proof of the physical region
+used by every request. Confirm the deployed function region and the plan's
+regional capabilities in Vercel. Vercel's [Function region
+documentation](https://vercel.com/docs/functions/configuring-functions/region)
+notes that supported regions depend on the account plan.
+
+The route code requests 30 seconds for chat and 70 seconds for plan generation.
+The actual platform limit depends on the deployed Vercel plan and current
+Vercel behavior; do not assume a plan permanently supports a particular
+duration. Check Vercel's [function
+limits](https://vercel.com/docs/functions/limitations) before enabling live
+requests.
+
+For a safer first deployment:
+
+1. Set `AI_REQUESTS_ENABLED=false` for Preview and Production.
+2. Deploy and verify the public pages, form flow, and static/reference
+   behavior.
+3. Confirm the server-side variables and Upstash database configuration.
+4. Enable `AI_REQUESTS_ENABLED=true` only for Production after the checks.
+   Keep Preview set to `false` unless Preview traffic is intentionally
+   allowed to consume the shared quota.
+5. Redeploy after changing Vercel environment variables.
+
+With a Git-connected Vercel project, pushes to branches create Preview
+deployments and updates to the production branch (commonly `main`) create a
+Production deployment. See Vercel's [Git deployment
+documentation](https://vercel.com/docs/git).
+
+After deployment, manually check:
+
+- The public home page and `/transfer` load.
+- A normal student flow and the fictional **Try an Example** flow.
+- Chat responses, citation markers, and expandable cited excerpts.
+- Preparation-plan generation, item checkboxes, copy behavior, and stale-plan
+  handling after editing details.
+- Redis production counters for the expected whole-application keys.
+- The desktop Details toggle and the mobile layout at representative phone
+  widths.
+- The deployed function region and actual route duration support.
+
+## Architecture and API overview
+
+Important areas:
+
+- `app/page.tsx`: home page and entry points.
+- `app/transfer/page.tsx`: intake flow, consultation workspace, Markdown and
+  citation display, plan controls, and in-memory UI state.
+- `lib/transfer/`: shared transfer types, formatting, checklist logic, and
+  input validation.
+- `lib/references/`: reviewed reference records, precise school matching, and
+  public metadata conversion.
+- `lib/chat/claude-service.ts`: server-only Claude client, system prompt,
+  document citations, error mapping, and response truncation handling.
+- `lib/chat/plan-service.ts`: server-only structured-plan schema, prompt,
+  source-ID validation, status-specific coverage rules, and plan limits.
+- `lib/server/ai-guard.ts`: AI switch, body-size checks, in-memory fallback,
+  Upstash atomic minute/day limits, and fail-closed responses.
+- `app/api/`: public server route handlers.
+
+### API routes
+
+#### `POST /api/chat`
+
+Accepts the latest structured `studentData` and a bounded `messages` array
+whose roles are `user` or `assistant`. The server validates the payload,
+selects applicable active references, sends only the server-controlled prompt
+and references upstream, and maps validated citation blocks back to reference
+metadata.
+
+Common responses:
+
+- `200`: `ready`, `not_configured`, or a structured service result.
+- `400`: invalid JSON, student data, or chat history.
+- `413`: request body too large.
+- `429`: shared minute or daily limit reached.
+- `503`: AI paused or shared Redis protection unavailable.
+- `502`: an upstream Claude service error.
+
+#### `POST /api/plan`
+
+Accepts the latest structured `studentData` only. It does not read chat
+history or infer structured facts from prior messages. The server chooses
+applicable references and asks Claude for the validated structured fields:
+situation summary, missing information, preparation items, DSO questions, and
+coverage limits.
+
+Each item contains an ID, title, short description, basis type, and reference
+IDs. The server rejects unknown reference IDs, unsupported `source_based`
+items for OPT/Other/Not sure statuses, missing restricted-status coverage
+limits, excessive item/question counts, and invalid item descriptions.
+
+It uses the same common error classes as chat where applicable, plus
+structured-output, validation, timeout, and truncation failures. A successful
+plan includes server-resolved reference metadata; URLs, titles, publishers,
+and IDs are not generated by the model.
+
+#### `GET /api/references`
+
+Accepts school and situation query parameters and returns the server-selected
+public reference metadata, notices, and school-match results. It does not
+return the complete `sourceText`. `unverified` references are not included in
+the active answer collection.
+
+## Privacy, limitations, and troubleshooting
+
+The current UI keeps form data, chat messages, plan results, and checked plan
+items in browser memory for the current page. Refreshing clears them. There is
+no account or persistent application database in this MVP.
+
+Server logs intentionally record operational numbers such as Claude stop
+reason, token usage, plan validation code, and request duration. The current
+Claude and plan logging paths do not log complete student profiles, chat
+transcripts, answer text, secrets, or raw IP addresses. This does not mean
+that Anthropic, Vercel, Upstash, browsers, or network providers never process
+or retain data under their own terms. Review their current privacy,
+retention, and billing documentation before using real personal information.
+
+Common issues:
+
+- **AI requests are paused:** set `AI_REQUESTS_ENABLED=true` exactly, then
+  restart locally or redeploy after changing Vercel variables.
+- **`not_configured`:** check that `ANTHROPIC_API_KEY` and
+  `ANTHROPIC_MODEL` are present in the server environment. The key must not
+  use `NEXT_PUBLIC_`.
+- **Redis unavailable:** in Preview/Production, verify the REST URL, writable
+  token, environment assignment, and redeployment. The service intentionally
+  returns `503` instead of bypassing protection.
+- **Request timed out:** the request has a bounded 20-second chat or 60-second
+  plan timeout and no automatic upstream retry. Use the page's manual retry
+  only after checking configuration and service availability.
+- **Rate limit reached:** `429` distinguishes the shared UTC-minute limit from
+  the shared UTC-day limit. Wait for the indicated period; do not repeatedly
+  submit.
+- **Plan is Out of date:** edit details changed the structured input. Generate
+  a new plan before copying or relying on it.
+- **Environment changes appear ineffective:** local changes require a server
+  restart; Vercel changes require a new deployment. Confirm the variable is
+  assigned to the intended Preview or Production environment.
+- **School-specific guidance is missing:** only the implemented exact current
+  UC Berkeley match receives the Berkeley transfer-out source. A target-school
+  name alone does not add target-school policy.
+
+## Development status and next steps
+
+This is an early MVP with a working F-1 transfer-preparation flow, reviewed
+federal and limited UC Berkeley source coverage, server-controlled Claude
+chat/citations, explicit structured plan generation, and deployment safeguards.
+It does not claim user-outcome, accuracy, or adoption metrics.
+
+The next priorities are controlled trials with intended users, feedback on
+clarity and workflow, and adding more school-specific material only after
+source review and verification. Expanding coverage must not be treated as
+implemented until the corresponding sources, matching rules, prompts, and
+tests are updated.
