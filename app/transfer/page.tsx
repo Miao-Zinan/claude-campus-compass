@@ -449,18 +449,18 @@ export default function TransferPage() {
   };
 
   return (
-    <div className={`${step === 3 ? "flex h-[100dvh] flex-col overflow-hidden" : "min-h-screen"} bg-[linear-gradient(135deg,var(--background)_0%,var(--surface)_55%,var(--surface-muted)_100%)] text-[var(--text)]`}>
-      <header className={`mx-auto flex w-full max-w-7xl shrink-0 items-center justify-between px-5 sm:px-8 ${step === 3 ? "py-3" : "py-6"}`}>
-        <Link href="/" aria-label="Claude Campus Compass home" className="flex items-center gap-3">
-          <Image src="/campus-compass-icon.png" alt="" width={48} height={48} className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12" />
-          <span className="text-xl font-semibold tracking-tight">Claude Campus Compass</span>
+    <div className={`${step === 3 ? "min-h-screen lg:flex lg:h-[100dvh] lg:flex-col lg:overflow-hidden" : "min-h-screen"} bg-[linear-gradient(135deg,var(--background)_0%,var(--surface)_55%,var(--surface-muted)_100%)] text-[var(--text)]`}>
+      <header className={`mx-auto flex w-full max-w-7xl shrink-0 flex-wrap items-center justify-between gap-2 px-4 sm:px-8 ${step === 3 ? "py-2 sm:py-3" : "py-6"}`}>
+        <Link href="/" aria-label="Claude Campus Compass home" className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Image src="/campus-compass-icon.png" alt="" width={48} height={48} className="h-8 w-8 shrink-0 object-contain sm:h-12 sm:w-12" />
+          <span className="text-base font-semibold tracking-tight sm:text-xl">Claude Campus Compass</span>
         </Link>
-        <span className="rounded-full border border-[var(--accent)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--heading)] sm:px-4 sm:text-xs">
+        <span className="rounded-full border border-[var(--accent)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--heading)] sm:px-4 sm:py-1.5 sm:text-xs sm:tracking-[0.15em]">
           Interactive Demo
         </span>
       </header>
 
-      <main className={`mx-auto w-full max-w-7xl px-5 sm:px-8 ${step === 3 ? "min-h-0 flex-1 overflow-hidden pb-3" : "pb-12"}`}>
+      <main className={`mx-auto w-full max-w-7xl px-4 sm:px-8 ${step === 3 ? "pb-6 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pb-3" : "pb-12"}`}>
         {step < 3 ? (
           <div className="mx-auto max-w-3xl pt-8 sm:pt-12">
             <div className="mb-8">
@@ -684,11 +684,11 @@ function ConsultationView({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col pt-2 sm:pt-3">
+    <div className="flex flex-col pt-1 sm:pt-3 lg:h-full lg:min-h-0">
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--heading)]">Your transfer planning workspace</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] sm:text-2xl">A clearer conversation starts here.</h1>
+          <h1 className="mt-1 text-lg font-semibold tracking-[-0.03em] sm:text-2xl">A clearer conversation starts here.</h1>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>
@@ -698,8 +698,8 @@ function ConsultationView({
         </div>
       </div>
       <div className="mb-2 shrink-0"><DemoNotice /></div>
-      <div className={`grid min-h-0 flex-1 items-stretch gap-5 overflow-y-auto lg:overflow-hidden ${detailsOpen ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]" : "grid-cols-1"}`}>
-        <section className={`order-1 flex min-h-0 min-w-0 flex-col rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-4 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-6 ${detailsOpen ? "" : "w-full"}`}>
+      <div className={`grid items-stretch gap-5 overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden ${detailsOpen ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]" : "grid-cols-1"}`}>
+        <section className={`order-1 flex min-h-[30rem] h-[min(70dvh,42rem)] min-w-0 flex-col rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-4 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-6 lg:h-full lg:min-h-0 ${detailsOpen ? "" : "w-full"}`}>
           <div className="mb-5 flex items-center justify-between border-b border-[var(--accent)] pb-4">
             <div>
               <h2 className="font-semibold">Ask about your situation</h2>
@@ -791,15 +791,15 @@ function ConsultationView({
             {isResponding ? <p className="text-xs text-[var(--text)]">Requesting Claude guidance...</p> : null}
             {showJumpToLatest ? <button type="button" onClick={jumpToLatest} className="sticky bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[var(--primary)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] shadow-sm">Jump to latest</button> : null}
           </div>
-          <form onSubmit={submitChat} autoComplete="off" className="flex shrink-0 gap-2 border-t border-[var(--accent)] pt-5">
+          <form onSubmit={submitChat} autoComplete="off" className="flex shrink-0 flex-col gap-2 border-t border-[var(--accent)] pt-4 sm:flex-row sm:pt-5">
             <label htmlFor="chatInput" className="sr-only">Ask a question</label>
-            <textarea id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={handleChatInputKeyDown} placeholder="Type a question for the demo..." autoComplete="off" rows={2} className="min-h-12 min-w-0 flex-1 resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
-            <button type="submit" disabled={!chatInput.trim() || isResponding} className="rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--heading)] disabled:cursor-not-allowed disabled:bg-[var(--accent)]">Send</button>
+            <textarea id="chatInput" value={chatInput} onChange={(event) => setChatInput(event.target.value)} onKeyDown={handleChatInputKeyDown} placeholder="Type a question for the demo..." autoComplete="off" rows={2} className="min-h-12 min-w-0 flex-1 resize-y rounded-xl border border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-base outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--surface-muted)]" />
+            <button type="submit" disabled={!chatInput.trim() || isResponding} className="min-h-12 rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white hover:bg-[var(--heading)] disabled:cursor-not-allowed disabled:bg-[var(--accent)] sm:self-end">Send</button>
           </form>
         </section>
 
-        {detailsOpen ? <aside className="order-2 flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+        {detailsOpen ? <aside className="order-2 flex min-w-0 flex-col overflow-visible lg:min-h-0 lg:overflow-hidden">
+          <div className="space-y-6 pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-6 shadow-[0_20px_60px_rgba(6,75,96,0.08)]">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Your situation summary</h2>
@@ -880,7 +880,7 @@ function ConsultationView({
           </div>
         </aside> : null}
       </div>
-      <p className="mt-2 shrink-0 text-center text-xs leading-5 text-[var(--text)]">Independent student project providing information navigation. Confirm personal details with your school adviser.</p>
+      <p className="mt-2 shrink-0 pb-[env(safe-area-inset-bottom)] text-center text-xs leading-5 text-[var(--text)]">Independent student project providing information navigation. Confirm personal details with your school adviser.</p>
     </div>
   );
 }
