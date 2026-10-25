@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { CSSProperties, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   checklistFor,
   emptyForm,
@@ -22,6 +22,15 @@ import {
   numberCitationSources,
 } from "@/lib/transfer/citations";
 import { MAX_CHAT_MESSAGE_LENGTH, MAX_FIELD_LENGTH } from "@/lib/transfer/validation";
+import {
+  canSplit,
+  chatRatioBounds,
+  chatRatioFromPointer,
+  clampChatRatio,
+  nudgeChatRatio,
+  SPLIT_DEFAULT_CHAT_RATIO,
+  SPLIT_GRID_TEMPLATE,
+} from "@/lib/transfer/split-pane";
 import type {
   ChatCitation,
   ChatMessage,
@@ -182,6 +191,19 @@ function DemoNotice() {
   );
 }
 
+// Matches Tailwind's lg breakpoint, where the workspace switches to the fixed-height desktop layout.
+const DESKTOP_QUERY = "(min-width: 64rem)";
+
+function subscribeToDesktopQuery(onChange: () => void) {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+const getDesktopSnapshot = () => window.matchMedia(DESKTOP_QUERY).matches;
+const getServerDesktopSnapshot = () => false;
+const toPercent = (ratio: number) => Math.round(ratio * 100);
+
 function CharacterCount({ id, length, max, label, showCount = true }: {
   id: string;
   length: number;
@@ -217,6 +239,8 @@ export default function TransferPage() {
   const [planOutOfDate, setPlanOutOfDate] = useState(false);
   const [checkedPlanItems, setCheckedPlanItems] = useState<Record<string, boolean>>({});
   const [planRequests] = useState(createLatestRequestTracker);
+  // Desktop split ratio, kept in page memory so it survives Edit details and hiding Details.
+  const [chatRatio, setChatRatio] = useState(SPLIT_DEFAULT_CHAT_RATIO);
   const editHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => () => planRequests.cancel(), [planRequests]);
@@ -591,6 +615,8 @@ export default function TransferPage() {
           <ConsultationView
             form={form}
             isExample={isExample}
+            chatRatio={chatRatio}
+            setChatRatio={setChatRatio}
             summary={summary}
             onEditDetails={editDetails}
             chatInput={chatInput}
@@ -621,6 +647,8 @@ export default function TransferPage() {
 function ConsultationView({
   form,
   isExample,
+  chatRatio,
+  setChatRatio,
   summary,
   onEditDetails,
   chatInput,
@@ -644,6 +672,8 @@ function ConsultationView({
 }: {
   form: TransferForm;
   isExample: boolean;
+  chatRatio: number;
+  setChatRatio: (ratio: number) => void;
   summary: string;
   onEditDetails: () => void;
   chatInput: string;
@@ -685,6 +715,97 @@ function ConsultationView({
   useEffect(() => {
     workspaceHeadingRef.current?.focus();
   }, []);
+
+  // Desktop split pane. Measured against the workspace grid itself, not the window.
+  const workspaceGridRef = useRef<HTMLDivElement>(null);
+  const separatorRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ pointerId: number; left: number; width: number; ratio: number; moved: boolean; userSelect: string; cursor: string } | null>(null);
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const [gridWidth, setGridWidth] = useState<number | null>(null);
+  const isDesktop = useSyncExternalStore(subscribeToDesktopQuery, getDesktopSnapshot, getServerDesktopSnapshot);
+  const splitActive = detailsOpen && isDesktop && (gridWidth === null || canSplit(gridWidth));
+  const stackedDesktop = detailsOpen && isDesktop && !splitActive;
+  const effectiveChatRatio = gridWidth === null ? chatRatio : clampChatRatio(chatRatio, gridWidth);
+  const ratioBounds = gridWidth === null ? { min: effectiveChatRatio, max: effectiveChatRatio } : chatRatioBounds(gridWidth);
+  const splitValueText = (ratio: number) => `Chat ${toPercent(ratio)}%, details ${100 - toPercent(ratio)}%`;
+
+  useEffect(() => {
+    const element = workspaceGridRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => setGridWidth(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const finishSplitDrag = () => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = null;
+    document.body.style.userSelect = drag.userSelect;
+    document.body.style.cursor = drag.cursor;
+    setIsDraggingSplit(false);
+    // A click without movement keeps the stored preference instead of its clamped value.
+    if (drag.moved) setChatRatio(drag.ratio);
+  };
+
+  useEffect(() => () => {
+    // Restore text selection if the workspace unmounts mid-drag.
+    const drag = dragRef.current;
+    if (drag) {
+      document.body.style.userSelect = drag.userSelect;
+      document.body.style.cursor = drag.cursor;
+    }
+  }, []);
+
+  const startSplitDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const grid = workspaceGridRef.current;
+    if (event.button !== 0 || !grid) return;
+    event.preventDefault();
+    const rect = grid.getBoundingClientRect();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      left: rect.left,
+      width: rect.width,
+      ratio: clampChatRatio(chatRatio, rect.width),
+      moved: false,
+      userSelect: document.body.style.userSelect,
+      cursor: document.body.style.cursor,
+    };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    setIsDraggingSplit(true);
+  };
+
+  const moveSplitDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.ratio = chatRatioFromPointer(event.clientX, drag.left, drag.width);
+    drag.moved = true;
+    // Update only the CSS variable while dragging so chat and plan content are not re-rendered per move.
+    workspaceGridRef.current?.style.setProperty("--chat-ratio", String(drag.ratio));
+    separatorRef.current?.setAttribute("aria-valuenow", String(toPercent(drag.ratio)));
+    separatorRef.current?.setAttribute("aria-valuetext", splitValueText(drag.ratio));
+  };
+
+  const handleSplitKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const width = gridWidth ?? workspaceGridRef.current?.getBoundingClientRect().width;
+    if (!width) return;
+    const next = event.key === "ArrowLeft"
+      ? nudgeChatRatio(chatRatio, -1, width)
+      : event.key === "ArrowRight"
+        ? nudgeChatRatio(chatRatio, 1, width)
+        : event.key === "Home"
+          ? chatRatioBounds(width).min
+          : event.key === "End"
+            ? chatRatioBounds(width).max
+            : null;
+    if (next === null) return;
+    event.preventDefault();
+    setChatRatio(next);
+  };
+
+  const resetSplit = () => setChatRatio(SPLIT_DEFAULT_CHAT_RATIO);
   const actionButtonClass = "cursor-pointer rounded-full text-[var(--heading)] transition-colors hover:bg-[#D1E9EB] active:bg-[#B8DADD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2";
   const copyStatusLabel = (key: string, label: string) => copyStatuses[key] === "success" ? "✓ Copied" : copyStatuses[key] === "error" ? "Copy failed" : label;
 
@@ -732,15 +853,30 @@ function ConsultationView({
           <h1 ref={workspaceHeadingRef} tabIndex={-1} className="mt-1 text-lg font-semibold tracking-[-0.03em] outline-none sm:text-2xl">A clearer conversation starts here.</h1>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>
+          {splitActive ? (
+            <button type="button" onClick={resetSplit} title="Restore the default 70% chat / 30% details split" className={`${actionButtonClass} px-3 py-1.5 text-xs font-semibold underline underline-offset-4`}>
+              Reset layout
+            </button>
+          ) : null}
+          <button type="button" onClick={() => setDetailsOpen((open) => !open)} aria-expanded={detailsOpen} aria-controls="workspace-details" className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>
             {detailsOpen ? "Hide details" : "Details"}
           </button>
           <Link href="/" className={`${actionButtonClass} border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold`}>Exit demo</Link>
         </div>
       </div>
       <div className="mb-2 shrink-0"><DemoNotice /></div>
-      <div className={`grid items-stretch gap-5 overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden ${detailsOpen ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.6fr)]" : "grid-cols-1"}`}>
-        <section className={`order-1 flex min-h-[30rem] h-[min(70dvh,42rem)] min-w-0 flex-col rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-4 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-6 lg:h-full lg:min-h-0 ${detailsOpen ? "" : "w-full"}`}>
+      <div
+        ref={workspaceGridRef}
+        style={{ "--chat-ratio": String(chatRatio), gridTemplateColumns: splitActive ? SPLIT_GRID_TEMPLATE : undefined } as CSSProperties}
+        className={
+          splitActive
+            ? "grid items-stretch gap-0 overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+            : stackedDesktop
+              ? "grid grid-cols-1 items-stretch gap-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+              : "grid grid-cols-1 items-stretch gap-5 overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+        }
+      >
+        <section id="workspace-chat" className={`order-1 flex min-h-[30rem] h-[min(70dvh,42rem)] min-w-0 flex-col rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-4 shadow-[0_20px_60px_rgba(6,75,96,0.08)] sm:p-6 ${stackedDesktop ? "" : "lg:h-full lg:min-h-0"} ${detailsOpen ? "" : "w-full"}`}>
           <div className="mb-5 flex items-center justify-between border-b border-[var(--accent)] pb-4">
             <div>
               <h2 className="font-semibold">Ask about your situation</h2>
@@ -844,7 +980,40 @@ function ConsultationView({
           </form>
         </section>
 
-        {detailsOpen ? <aside className="order-2 flex min-w-0 flex-col overflow-visible lg:min-h-0 lg:overflow-hidden">
+        {splitActive ? (
+          <div
+            ref={separatorRef}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat and details panels"
+            aria-controls="workspace-chat workspace-details"
+            aria-valuemin={toPercent(ratioBounds.min)}
+            aria-valuemax={toPercent(ratioBounds.max)}
+            aria-valuenow={toPercent(effectiveChatRatio)}
+            aria-valuetext={splitValueText(effectiveChatRatio)}
+            tabIndex={0}
+            title="Drag or use the Left and Right arrow keys to resize. Double-click to reset."
+            data-dragging={isDraggingSplit ? "true" : "false"}
+            onPointerDown={startSplitDrag}
+            onPointerMove={moveSplitDrag}
+            onPointerUp={finishSplitDrag}
+            onPointerCancel={finishSplitDrag}
+            onLostPointerCapture={finishSplitDrag}
+            onMouseDown={(event) => event.preventDefault()}
+            onDoubleClick={resetSplit}
+            onKeyDown={handleSplitKeyDown}
+            className="group relative order-2 flex cursor-col-resize touch-none select-none justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+          >
+            <span aria-hidden="true" className="my-6 w-0.5 rounded-full bg-[var(--accent)]/30 transition-colors group-hover:bg-[var(--accent)] group-focus-visible:bg-[var(--primary)] group-data-[dragging=true]:bg-[var(--heading)]" />
+            <span aria-hidden="true" className="absolute top-1/2 flex h-10 w-3 -translate-y-1/2 flex-col items-center justify-center gap-1 rounded-full border border-[var(--accent)] bg-[var(--surface)] shadow-sm transition-colors group-hover:border-[var(--primary)] group-hover:bg-[var(--surface-muted)] group-focus-visible:border-[var(--primary)] group-data-[dragging=true]:border-[var(--heading)] group-data-[dragging=true]:bg-[var(--surface-muted)]">
+              <span className="h-1 w-1 rounded-full bg-[var(--heading)]" />
+              <span className="h-1 w-1 rounded-full bg-[var(--heading)]" />
+              <span className="h-1 w-1 rounded-full bg-[var(--heading)]" />
+            </span>
+          </div>
+        ) : null}
+
+        {detailsOpen ? <aside id="workspace-details" className="order-3 flex min-w-0 flex-col overflow-visible lg:min-h-0 lg:overflow-hidden">
           <div className="space-y-6 pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <section className="rounded-[2rem] border border-[var(--accent)] bg-[var(--surface)]/75 p-6 shadow-[0_20px_60px_rgba(6,75,96,0.08)]">
             <div className="flex items-center justify-between gap-3">

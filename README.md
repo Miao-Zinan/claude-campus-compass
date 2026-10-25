@@ -59,6 +59,22 @@ the summary, preparation plan, and reference panel; hiding it expands the
 chat across the main content area. On mobile, the chat and Details content are
 stacked in normal document flow so the page can scroll naturally.
 
+On desktop (1024 px and wider), while Details is visible, a vertical separator
+splits the workspace about 70% chat / 30% Details:
+
+- **Resize:** drag the separator, or focus it and use the Left/Right arrow
+  keys; Home/End jump to either limit. Left enlarges Details and Right
+  enlarges Chat.
+- **Limits:** Chat keeps at least 440 px and Details at least 280 px. If the
+  workspace is too narrow for both, the panels stack without a separator.
+- **Reset:** **Reset layout**, or a double-click on the separator, restores
+  the default split.
+- **Memory:** the chosen split is kept in page memory only. It survives
+  hiding and showing Details, Edit details, and window resizing, where widths
+  are clamped to the limits. Refreshing the page resets it.
+
+Mobile and tablet widths keep the stacked layout with no separator.
+
 ## Current capabilities and coverage
 
 Implemented now:
@@ -112,8 +128,9 @@ Implemented now:
   an `AI_REQUESTS_ENABLED` server switch. Text fields are limited to 500
   characters and chat messages to 4,000 characters on both the client and the
   server. The current situation must be one of the five supported values.
-- Responsive consultation layout with desktop internal scrolling and a
-  mobile layout that remains naturally scrollable.
+- Responsive consultation layout with desktop internal scrolling, a
+  resizable desktop chat/Details split, and a mobile layout that remains
+  naturally scrollable.
 
 Current reviewed coverage:
 
@@ -337,7 +354,9 @@ Testing history and current coverage:
   - plan error classification from mocked Anthropic responses: truncation,
     parse failure, refusal, configuration, rejected requests, and
     cancellation;
-  - stale-request tracking and live-region text.
+  - stale-request tracking and live-region text;
+  - desktop split-pane ratio calculation, minimum-width clamping, and keyboard
+    steps.
 
   Redis is a local mock, and Anthropic responses come from a mocked `fetch`.
   The minute limit, daily limit, and Redis timeout paths are not yet covered
