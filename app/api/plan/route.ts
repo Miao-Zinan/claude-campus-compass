@@ -5,7 +5,7 @@ import { acquireAiRequest, AI_BODY_LIMITS, guardResponse, readJsonBody } from "@
 export const maxDuration = 70;
 
 export async function POST(request: Request) {
-  const guard = acquireAiRequest("plan");
+  const guard = await acquireAiRequest("plan");
   if (!guard.allowed) return guardResponse(guard);
   let body: unknown;
   try {

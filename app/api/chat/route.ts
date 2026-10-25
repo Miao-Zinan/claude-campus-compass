@@ -24,7 +24,7 @@ function validateMessages(value: unknown): value is ChatMessage[] {
 }
 
 export async function POST(request: Request) {
-  const guard = acquireAiRequest("chat");
+  const guard = await acquireAiRequest("chat");
   if (!guard.allowed) return guardResponse(guard);
   let body: unknown;
   try {

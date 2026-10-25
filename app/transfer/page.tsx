@@ -304,12 +304,19 @@ export default function TransferPage() {
       const result: {
         status?: string;
         message?: string;
+        limit?: "minute" | "daily";
         plan?: PreparationPlan;
         references?: PlanReference[];
         generatedAt?: string;
       } = await response.json();
       if (response.status === 429) {
-        setPlanError(result.message || "Too many plan requests. Please wait and try again.");
+        setPlanError(
+          result.limit === "daily"
+            ? "The shared daily AI request limit has been reached. Please try again tomorrow."
+            : result.limit === "minute"
+              ? "The shared short-term AI request limit has been reached. Please wait and try again."
+              : result.message || "Too many plan requests. Please wait and try again.",
+        );
         return;
       }
       if (response.status === 503) {
@@ -355,16 +362,22 @@ export default function TransferPage() {
       const result: {
         status?: string;
         message?: string;
+        limit?: "minute" | "daily";
         blocks?: ChatResponseBlock[];
         truncated?: boolean;
       } = await response.json();
       if (response.status === 429 || response.status === 503) {
+        const rateLimitMessage = result.limit === "daily"
+          ? "The shared daily AI request limit has been reached. Please try again tomorrow."
+          : result.limit === "minute"
+            ? "The shared short-term AI request limit has been reached. Please wait and try again."
+            : undefined;
         setChatMessages((messages) => [
           ...messages,
           {
             role: "assistant",
             kind: "status",
-            text: result.message || (response.status === 429 ? "Too many requests. Please wait and try again." : "Live AI requests are temporarily paused."),
+            text: rateLimitMessage || result.message || (response.status === 429 ? "Too many requests. Please wait and try again." : "Live AI requests are temporarily paused."),
           },
         ]);
         return;

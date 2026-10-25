@@ -89,13 +89,20 @@ Claude API access is server-side only. To enable live guidance locally:
 4. Set `AI_REQUESTS_ENABLED=true` to allow paid AI requests. Any other value,
    including a missing or empty variable and `false`, pauses paid AI requests
    while leaving the pages, forms, and existing in-memory results available.
-5. Restart the development server.
+5. For Preview and Production deployments, set `UPSTASH_REDIS_REST_URL` and
+   `UPSTASH_REDIS_REST_TOKEN` from the Upstash Redis Console. These are
+   server-only variables; never use a `NEXT_PUBLIC_` prefix.
+6. Restart the development server.
 
 Keep `.env.local` out of version control. Do not use `NEXT_PUBLIC_` variables
-for the key. If either variable is empty, the endpoint returns
-`not_configured` without calling Claude. This repository does not claim that a
-live API request has been tested unless one is explicitly run with local
-configuration. `ANTHROPIC_MODEL` must be selected from the model IDs currently
+for the key or Redis credentials. If either Anthropic variable is empty, the
+endpoint returns `not_configured` without calling Claude. In Preview and
+Production, missing or unavailable Redis returns HTTP 503 and never calls
+Claude. In local development without Redis configuration, the existing
+single-instance in-memory protection is used instead. This repository does not
+claim that a live API request or Redis connection has been tested unless one is
+explicitly run with local configuration. `ANTHROPIC_MODEL` must be selected from
+the model IDs currently
 documented by Anthropic or shown in the Anthropic Console; the application does
 not guess a model ID. Citation behavior follows Anthropic's official
 [Messages API](https://platform.claude.com/docs/en/api/messages) and
@@ -103,6 +110,23 @@ not guess a model ID. Citation behavior follows Anthropic's official
 Chat and preparation-plan requests each make one upstream Claude attempt:
 server-side SDK retries are disabled for both endpoints. The page retains
 manual retry actions, but it never automatically resends a failed request.
+
+### Shared AI request limits
+
+Preview and Production use Upstash Redis through the official
+`@upstash/redis` SDK. An atomic Redis script checks and increments both limits
+before Claude is called:
+
+- Chat: 12 requests per UTC minute and 100 requests per UTC day.
+- Preparation plan: 4 requests per UTC minute and 20 requests per UTC day.
+
+These are whole-application limits across all users and instances, not per-user
+allocations and not an exact dollar budget. Short-term exhaustion returns HTTP
+429 with a minute-based `Retry-After`; daily exhaustion returns HTTP 429 with a
+next-UTC-day `Retry-After`. Redis failures and timeouts fail closed with HTTP
+503 rather than bypassing the limiter. The SDK's allow-on-timeout behavior is
+not used. The in-memory concurrent-request cap remains only a per-instance
+defense and is not a global concurrency limit.
 
 ### Deployment checks
 
